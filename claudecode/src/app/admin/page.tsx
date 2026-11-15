@@ -11,13 +11,15 @@ import { Photo } from '@/components/ui/Photo';
 import { Score } from '@/components/ui/Score';
 import { useAsync } from '@/hooks/useAsync';
 import { CATEGORY_LABEL, formatBRL, formatDate, slugify } from '@/lib/format';
+import { brl, hasAvgPrice } from '@/lib/pricing';
+import { localIso } from '@/lib/week';
 import type { EventItem, PlatformSettings, ReviewStatus, Venue, VenueCategory } from '@/types';
 
 type Tab = 'geral' | 'boates' | 'eventos' | 'usuarios' | 'avaliacoes' | 'denuncias' | 'newsletter' | 'config';
 const TABS: { value: Tab; label: string }[] = [
   { value: 'geral', label: 'Visão geral' },
   { value: 'boates', label: 'Estabelecimentos' },
-  { value: 'eventos', label: 'Eventos' },
+  { value: 'eventos', label: 'Eventos e atrações' },
   { value: 'usuarios', label: 'Usuários' },
   { value: 'avaliacoes', label: 'Avaliações' },
   { value: 'denuncias', label: 'Denúncias' },
@@ -139,9 +141,9 @@ function VenuesAdmin() {
       </div>
       {!payload ? <Skeleton className="h-64" /> : (
         <div className="overflow-x-auto rounded-card border border-line">
-          <table className="w-full min-w-[760px] text-left text-[13px]">
+          <table className="w-full min-w-[860px] text-left text-[13px]">
             <thead className="border-b border-line text-[10px] uppercase tracking-nav text-mute">
-              <tr><th className="p-4">Nome</th><th className="p-4">Categoria</th><th className="p-4">Cidade</th><th className="p-4">Nota</th><th className="p-4">Aval.</th><th className="p-4">Selo</th><th className="p-4" /></tr>
+              <tr><th className="p-4">Nome</th><th className="p-4">Categoria</th><th className="p-4">Cidade</th><th className="p-4">Média R$</th><th className="p-4">Nota</th><th className="p-4">Aval.</th><th className="p-4">Selo</th><th className="p-4" /></tr>
             </thead>
             <tbody className="divide-y divide-line">
               {payload.venues.map((v) => (
@@ -155,6 +157,9 @@ function VenuesAdmin() {
                   </td>
                   <td className="p-4 text-mute">{CATEGORY_LABEL[v.category]}</td>
                   <td className="p-4 text-mute">{v.city}/{v.state}</td>
+                  <td className="p-4">
+                    {hasAvgPrice(v) ? <span className="font-display font-bold text-blue">{brl(v.avg_price)}</span> : <button onClick={() => setEditing(v)} className="text-[11px] text-mute underline decoration-line underline-offset-4 hover:text-bone">Informar</button>}
+                  </td>
                   <td className="p-4"><Score value={payload.stats[v.id]?.review_count ? payload.stats[v.id]!.avg_rating : null} size="xs" showMax={false} /></td>
                   <td className="p-4 text-mute">{payload.stats[v.id]?.review_count ?? 0}</td>
                   <td className="p-4 text-[11px]">{v.approved ? <span className="text-blue">Approved</span> : <span className="text-mute">—</span>}</td>
@@ -239,6 +244,23 @@ function VenueForm({ initial, onClose }: { initial: Partial<Venue>; onClose: () 
             <label className="btn-ghost btn-sm h-12 cursor-pointer whitespace-nowrap">Enviar<input type="file" accept="image/*" className="sr-only" onChange={(e) => upload(e.target.files?.[0])} /></label>
           </div>
         </Field>
+        <fieldset className="rounded-card border border-blue/30 bg-blue-soft p-4 sm:col-span-2 sm:p-5">
+          <legend className="px-2 text-[10px] font-extrabold uppercase tracking-wide2 text-blue">Média de preços (R$)</legend>
+          <p className="mb-4 text-[11px] leading-relaxed text-mute">
+            Deixe em branco o que não for confirmado — a página mostrará “não informado”, nunca um valor estimado automaticamente.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Média por pessoa" full>
+              <MoneyInput value={v.avg_price} onChange={(n) => set('avg_price', n)} placeholder="Ex.: 120" />
+            </Field>
+            <Field label="Entrada — mín."><MoneyInput value={v.entry_price_min} onChange={(n) => set('entry_price_min', n)} /></Field>
+            <Field label="Entrada — máx."><MoneyInput value={v.entry_price_max} onChange={(n) => set('entry_price_max', n)} /></Field>
+            <Field label="Drinks — mín."><MoneyInput value={v.drink_price_min} onChange={(n) => set('drink_price_min', n)} /></Field>
+            <Field label="Drinks — máx."><MoneyInput value={v.drink_price_max} onChange={(n) => set('drink_price_max', n)} /></Field>
+            <Field label="Consumação média — mín."><MoneyInput value={v.spend_min} onChange={(n) => set('spend_min', n)} /></Field>
+            <Field label="Consumação média — máx."><MoneyInput value={v.spend_max} onChange={(n) => set('spend_max', n)} /></Field>
+          </div>
+        </fieldset>
         <Field label="Galeria (URLs separadas por vírgula)" full>
           <input className="field" value={(v.gallery ?? []).join(', ')} onChange={(e) => set('gallery', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))} />
         </Field>
@@ -266,6 +288,22 @@ function VenueForm({ initial, onClose }: { initial: Partial<Venue>; onClose: () 
   );
 }
 
+/** Campo monetário opcional: vazio = null (não informado). */
+function MoneyInput({ value, onChange, placeholder }: { value: number | null | undefined; onChange: (n: number | null) => void; placeholder?: string }) {
+  return (
+    <input
+      className="field"
+      type="number"
+      inputMode="decimal"
+      min={0}
+      step="0.01"
+      placeholder={placeholder ?? 'Não informado'}
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+    />
+  );
+}
+
 function Field({ label, children, full }: { label: string; children: React.ReactNode; full?: boolean }) {
   return (
     <label className={clsx('block', full && 'sm:col-span-2')}>
@@ -280,7 +318,15 @@ function EventsAdmin() {
   const { data, version, bump } = useApp();
   const toast = useToast();
   const [editing, setEditing] = useState<Partial<EventItem> | null>(null);
+  const [venueFilter, setVenueFilter] = useState('');
+  const [when, setWhen] = useState<'todos' | 'proximos' | 'passados'>('todos');
+  const [confirmPurge, setConfirmPurge] = useState(false);
   const { data: payload } = useAsync(async () => ({ events: await data.listEvents(), venues: await data.listVenues() }), [data, version]);
+  const today = localIso(new Date());
+  const past = (payload?.events ?? []).filter((e) => e.event_date < today);
+  const list = (payload?.events ?? [])
+    .filter((e) => !venueFilter || e.venue_id === venueFilter)
+    .filter((e) => when === 'todos' || (when === 'passados' ? e.event_date < today : e.event_date >= today));
 
   const remove = async (id: string) => {
     try {
@@ -292,23 +338,55 @@ function EventsAdmin() {
     }
   };
 
+  const purgePast = async () => {
+    const targets = past.filter((e) => !venueFilter || e.venue_id === venueFilter);
+    try {
+      for (const e of targets) await data.admin.deleteEvent(e.id);
+      bump();
+      toast(`${targets.length} ${targets.length === 1 ? 'atração antiga removida' : 'atrações antigas removidas'}.`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Erro.', 'error');
+    } finally {
+      setConfirmPurge(false);
+    }
+  };
+  const purgeCount = past.filter((e) => !venueFilter || e.venue_id === venueFilter).length;
+
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <p className="text-[12px] text-mute">{payload?.events.length ?? '—'} eventos</p>
-        <button onClick={() => setEditing({ venue_id: payload?.venues[0]?.id, start_time: '23:00', dj_names: [], music_styles: [] })} className="btn-primary btn-sm"><Plus className="h-3.5 w-3.5" /> Cadastrar evento</button>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-wrap items-end gap-4">
+          <FilterSelect label="Boate / local" value={venueFilter} onChange={setVenueFilter}
+            options={[{ value: '', label: 'Todos os locais' }, ...(payload?.venues ?? []).map((v) => ({ value: v.id, label: v.name }))]} />
+          <FilterSelect label="Período" value={when} onChange={setWhen}
+            options={[{ value: 'todos', label: 'Todos' }, { value: 'proximos', label: 'Próximos' }, { value: 'passados', label: 'Já realizados' }]} />
+          <p className="pb-3 text-[12px] text-mute">{payload ? list.length : '—'} eventos</p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <button onClick={() => setConfirmPurge(true)} disabled={!purgeCount} className="btn-ghost btn-sm"><Trash2 className="h-3.5 w-3.5" /> Remover antigas ({purgeCount})</button>
+          <button onClick={() => setEditing({ venue_id: venueFilter || payload?.venues[0]?.id, start_time: '23:00', dj_names: [], music_styles: [] })} className="btn-primary btn-sm"><Plus className="h-3.5 w-3.5" /> Nova atração / evento</button>
+        </div>
       </div>
-      {!payload ? <Skeleton className="h-64" /> : payload.events.length === 0 ? <EmptyState title="Sem eventos" /> : (
+      <p className="mb-6 max-w-2xl text-[12px] leading-relaxed text-mute">
+        Cada evento pertence a uma única casa. Os eventos dos próximos 7 dias aparecem automaticamente em “Atrações da semana” na página da casa e na home.
+      </p>
+      {!payload ? <Skeleton className="h-64" /> : list.length === 0 ? <EmptyState title="Sem eventos" text="Nenhum evento para estes filtros." /> : (
         <div className="overflow-x-auto rounded-card border border-line">
-          <table className="w-full min-w-[720px] text-left text-[13px]">
+          <table className="w-full min-w-[820px] text-left text-[13px]">
             <thead className="border-b border-line text-[10px] uppercase tracking-nav text-mute">
-              <tr><th className="p-4">Data</th><th className="p-4">Evento</th><th className="p-4">Local</th><th className="p-4">Preço</th><th className="p-4" /></tr>
+              <tr><th className="p-4">Data</th><th className="p-4">Evento</th><th className="p-4">DJs / artistas</th><th className="p-4">Local</th><th className="p-4">Preço</th><th className="p-4" /></tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {payload.events.map((e) => (
-                <tr key={e.id} className="hover:bg-panel">
-                  <td className="p-4 text-mute">{formatDate(e.event_date)} {e.start_time}</td>
-                  <td className="p-4"><Link href={`/eventos/${e.slug}`} className="font-semibold hover:text-blue">{e.name}</Link></td>
+              {list.map((e) => (
+                <tr key={e.id} className={clsx('hover:bg-panel', e.event_date < today && 'opacity-55')}>
+                  <td className="p-4 text-mute">{formatDate(e.event_date)} {e.start_time}{e.event_date < today && <span className="ml-2 text-[9px] uppercase tracking-nav">realizado</span>}</td>
+                  <td className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-14 shrink-0 overflow-hidden rounded-[3px]"><Photo src={e.cover_image} alt="" zoom={false} /></div>
+                      <Link href={`/eventos/${e.slug}`} className="font-semibold hover:text-blue">{e.name}</Link>
+                    </div>
+                  </td>
+                  <td className="max-w-[220px] truncate p-4 text-mute">{e.dj_names.join(', ') || '—'}</td>
                   <td className="p-4 text-mute">{e.venue.name}</td>
                   <td className="p-4 text-mute">{formatBRL(e.ticket_price)}</td>
                   <td className="p-4">
@@ -324,6 +402,16 @@ function EventsAdmin() {
         </div>
       )}
       {editing && payload && <EventForm initial={editing} venues={payload.venues} onClose={() => setEditing(null)} />}
+      <Modal open={confirmPurge} onClose={() => setConfirmPurge(false)} title="Remover atrações antigas">
+        <p className="text-sm text-mute">
+          Serão excluídos {purgeCount} {purgeCount === 1 ? 'evento já realizado' : 'eventos já realizados'}
+          {venueFilter ? <> de <span className="text-bone">{payload?.venues.find((v) => v.id === venueFilter)?.name}</span></> : ' de todas as casas'}, junto com as avaliações dessas edições. Esta ação não pode ser desfeita.
+        </p>
+        <div className="mt-6 flex justify-end gap-3">
+          <button onClick={() => setConfirmPurge(false)} className="btn-ghost btn-sm">Cancelar</button>
+          <button onClick={purgePast} className="btn-outline btn-sm">Remover</button>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -334,6 +422,15 @@ function EventForm({ initial, venues, onClose }: { initial: Partial<EventItem>; 
   const [e, setE] = useState<Partial<EventItem>>(initial);
   const [error, setError] = useState<string | null>(null);
   const set = <K extends keyof EventItem>(k: K, val: EventItem[K]) => setE((s) => ({ ...s, [k]: val }));
+
+  const upload = async (f?: File) => {
+    if (!f) return;
+    try {
+      set('cover_image', await data.uploadImage(f, 'venue-images'));
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Falha no envio.', 'error');
+    }
+  };
 
   const save = async (ev: React.FormEvent) => {
     ev.preventDefault();
@@ -351,16 +448,22 @@ function EventForm({ initial, venues, onClose }: { initial: Partial<EventItem>; 
   return (
     <Modal open onClose={onClose} title={initial.id ? 'Editar evento' : 'Novo evento'} wide>
       <form onSubmit={save} className="grid gap-4 sm:grid-cols-2">
-        <Field label="Nome"><input className="field" required value={e.name ?? ''} onChange={(x) => set('name', x.target.value)} /></Field>
-        <FilterSelect label="Local" value={e.venue_id ?? ''} onChange={(x) => set('venue_id', x)} options={venues.map((v) => ({ value: v.id, label: v.name }))} />
+        <Field label="Nome da festa / evento"><input className="field" required value={e.name ?? ''} onChange={(x) => set('name', x.target.value)} /></Field>
+        <FilterSelect label="Boate / local (obrigatório)" value={e.venue_id ?? ''} onChange={(x) => set('venue_id', x)} options={venues.map((v) => ({ value: v.id, label: `${v.name} — ${v.city}` }))} />
         <Field label="Data"><input className="field" type="date" required value={e.event_date ?? ''} onChange={(x) => set('event_date', x.target.value)} /></Field>
         <Field label="Horário"><input className="field" type="time" value={e.start_time ?? '23:00'} onChange={(x) => set('start_time', x.target.value)} /></Field>
         <Field label="Preço (R$)"><input className="field" type="number" min={0} step="0.01" value={e.ticket_price ?? ''} onChange={(x) => set('ticket_price', x.target.value === '' ? null : Number(x.target.value))} /></Field>
         <Field label="Link de ingressos"><input className="field" type="url" value={e.ticket_url ?? ''} onChange={(x) => set('ticket_url', x.target.value || null)} /></Field>
-        <Field label="DJs (separados por vírgula)" full><input className="field" value={(e.dj_names ?? []).join(', ')} onChange={(x) => set('dj_names', x.target.value.split(',').map((s) => s.trim()).filter(Boolean))} /></Field>
+        <Field label="DJs / artistas (separados por vírgula — o primeiro é o destaque)" full><input className="field" value={(e.dj_names ?? []).join(', ')} onChange={(x) => set('dj_names', x.target.value.split(',').map((s) => s.trim()).filter(Boolean))} /></Field>
         <Field label="Estilos (separados por vírgula)" full><input className="field" value={(e.music_styles ?? []).join(', ')} onChange={(x) => set('music_styles', x.target.value.split(',').map((s) => s.trim()).filter(Boolean))} /></Field>
-        <Field label="Imagem de capa (URL)" full><input className="field" value={e.cover_image ?? ''} onChange={(x) => set('cover_image', x.target.value)} placeholder="/images/stage-glow.jpg" /></Field>
-        <Field label="Descrição" full><textarea className="field h-auto py-3" rows={3} value={e.description ?? ''} onChange={(x) => set('description', x.target.value)} /></Field>
+        <Field label="Imagem de divulgação / foto do artista (URL ou envio)" full>
+          <div className="flex gap-3">
+            {e.cover_image && <div className="h-12 w-16 shrink-0 overflow-hidden rounded-[3px] border border-line"><Photo src={e.cover_image} alt="" zoom={false} /></div>}
+            <input className="field" value={e.cover_image?.startsWith('data:') ? '(imagem enviada)' : e.cover_image ?? ''} onChange={(x) => set('cover_image', x.target.value)} placeholder="/images/stage-glow.jpg" />
+            <label className="btn-ghost btn-sm h-12 cursor-pointer whitespace-nowrap">Enviar<input type="file" accept="image/*" className="sr-only" onChange={(x) => upload(x.target.files?.[0])} /></label>
+          </div>
+        </Field>
+        <Field label="Informações adicionais (descrição)" full><textarea className="field h-auto py-3" rows={3} value={e.description ?? ''} onChange={(x) => set('description', x.target.value)} /></Field>
         <div className="sm:col-span-2"><FieldError message={error} /></div>
         <div className="flex justify-end gap-3 sm:col-span-2">
           <button type="button" onClick={onClose} className="btn-ghost btn-sm">Cancelar</button>
