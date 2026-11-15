@@ -9,7 +9,8 @@ import { Photo } from '@/components/ui/Photo';
 import { Score } from '@/components/ui/Score';
 import { ApprovedBadge } from '@/components/brand/ApprovedSeal';
 import { useAsync } from '@/hooks/useAsync';
-import { CATEGORY_LABEL } from '@/lib/format';
+import { CATEGORY_LABEL, priceLabel } from '@/lib/format';
+import { brl, hasAvgPrice } from '@/lib/pricing';
 import type { RankingCategory, RankingPeriod, RankingRow } from '@/types';
 
 const CATEGORIES: { value: RankingCategory; label: string }[] = [
@@ -155,6 +156,13 @@ function RankingListItem({ row, index, period }: { row: RankingRow; index: numbe
           </div>
           <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-nav text-mute">
             {CATEGORY_LABEL[venue.category]} · {venue.neighborhood} · {venue.city}
+          </p>
+          <p className="mt-2 text-[11px] font-semibold text-blue">
+            {hasAvgPrice(venue) ? (
+              <>Média {brl(venue.avg_price)} <span className="font-normal text-mute">/pessoa</span></>
+            ) : (
+              <span className="font-normal text-mute">{priceLabel(venue.price_range)} · média não informada</span>
+            )}
           </p>
         </div>
         <div className="text-right">
