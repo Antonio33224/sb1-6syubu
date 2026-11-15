@@ -3,6 +3,7 @@ import { Photo } from '@/components/ui/Photo';
 import { Score } from '@/components/ui/Score';
 import { ApprovedBadge } from '@/components/brand/ApprovedSeal';
 import { FavoriteButton } from '@/components/actions/Actions';
+import { PriceTag } from '@/components/venue/PriceDisplay';
 import { CATEGORY_LABEL, priceLabel } from '@/lib/format';
 import type { Venue, VenueStats } from '@/types';
 
@@ -17,6 +18,7 @@ export function VenueCard({ venue, stats }: { venue: Venue; stats?: VenueStats }
           <FavoriteButton venueId={venue.id} variant="icon" />
         </div>
         {venue.approved && <ApprovedBadge compact className="absolute bottom-4 left-4" />}
+        <PriceTag venue={venue} tone="glass" className="absolute bottom-4 right-4" />
       </div>
       <div className="flex items-end justify-between gap-3 p-5">
         <div className="min-w-0">
