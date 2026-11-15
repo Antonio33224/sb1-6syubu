@@ -37,6 +37,18 @@ export interface Venue {
   website_url: string | null;
   /** 1 a 4 — R$ a R$$$$ */
   price_range: number;
+  /**
+   * Média de gasto estimada por pessoa (R$), cadastrada pelo administrador.
+   * null = não informado (a interface nunca inventa um valor).
+   */
+  avg_price?: number | null;
+  /** Faixas opcionais em R$ (mín–máx). null = não informado. */
+  entry_price_min?: number | null;
+  entry_price_max?: number | null;
+  drink_price_min?: number | null;
+  drink_price_max?: number | null;
+  spend_min?: number | null;
+  spend_max?: number | null;
   music_styles: string[];
   opening_days: string[];
   /** Calculado pelo sistema (selo Classify Approved). */
