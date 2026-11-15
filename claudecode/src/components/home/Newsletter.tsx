@@ -34,14 +34,19 @@ export function Newsletter() {
   return (
     <section className="border-t border-line bg-ink-2">
       <div className="container-site grid items-center gap-10 py-16 sm:py-20 lg:grid-cols-[1.1fr_1fr] lg:gap-20">
-        <h2 className="font-display text-[40px] font-extrabold uppercase leading-[0.92] tracking-tight sm:text-[56px]">
-          Faça parte
-          <br />
-          da comunidade.
-        </h2>
+        <div>
+          <p className="flex items-center gap-3 text-[10px] font-extrabold uppercase tracking-wide2 text-blue">
+            <span className="h-px w-8 bg-blue/60" /> Newsletter
+          </p>
+          <h2 className="mt-4 font-display text-[40px] font-extrabold uppercase leading-[0.9] tracking-tight sm:text-[60px]">
+            Receba o melhor
+            <br />
+            da <span className="text-blue">noite.</span>
+          </h2>
+        </div>
         <div>
           <p className="max-w-md text-[15px] leading-relaxed text-mute">
-            Receba os rankings, novidades e os melhores eventos em primeira mão.
+            Novidades, eventos da semana e os rankings atualizados direto no seu e-mail. Sem spam.
           </p>
           <form onSubmit={submit} className="mt-7 flex flex-col gap-3 sm:flex-row" noValidate>
             <label htmlFor="newsletter-email" className="sr-only">E-mail</label>
