@@ -9,6 +9,7 @@ import { compressImage } from '@/lib/image';
 import { validateComment, validateEmail, validatePassword, validateUsername } from '@/lib/moderation';
 import { DEFAULT_SETTINGS } from '@/lib/ranking';
 import { slugify } from '@/lib/format';
+import { normalizePrices, PRICE_FIELDS, validatePrices } from '@/lib/pricing';
 import { CRITERIA } from '@/types';
 import type {
   CriteriaScores,
@@ -64,6 +65,8 @@ const mapVenue = (r: Record<string, unknown>): Venue => ({
   latitude: num(r.latitude),
   longitude: num(r.longitude),
   gallery: (r.gallery as string[]) ?? [],
+  // numeric do Postgres chega como string; null permanece null (não informado)
+  ...Object.fromEntries(PRICE_FIELDS.map((f) => [f, r[f] === null || r[f] === undefined ? null : num(r[f])])),
   music_styles: (r.music_styles as string[]) ?? [],
   opening_days: (r.opening_days as string[]) ?? [],
 });
@@ -479,8 +482,13 @@ export class SupabaseService implements DataService {
       };
     },
     upsertVenue: async (v: Partial<Venue> & { name: string }) => {
+      const pErr = validatePrices(v);
+      if (pErr) throw new ServiceError(pErr);
       const { approved: _a, id, created_at: _c, ...rest } = v;
-      const payload = { ...rest, slug: v.slug || slugify(v.name) };
+      const prices = normalizePrices(v);
+      // Só envia os campos de preço presentes no patch (não apaga valores ao editar outros campos).
+      const pricePatch = Object.fromEntries(PRICE_FIELDS.filter((f) => f in v).map((f) => [f, prices[f]]));
+      const payload = { ...rest, ...pricePatch, slug: v.slug || slugify(v.name) };
       const q = id ? this.sb.from('venues').update(payload).eq('id', id) : this.sb.from('venues').insert(payload);
       const { data, error } = await q.select().single();
       fail(error);
@@ -491,7 +499,8 @@ export class SupabaseService implements DataService {
       fail(error);
     },
     upsertEvent: async (e: Partial<EventItem> & { name: string; venue_id: string }) => {
-      const { id, created_at: _c, ...rest } = e as EventItem;
+      // `venue` pode vir aninhado quando o evento foi carregado por listEvents — não é coluna.
+      const { id, created_at: _c, venue: _v, ...rest } = e as EventItem & { venue?: unknown };
       const payload = { ...rest, slug: e.slug || slugify(`${e.name}-${e.event_date}`) };
       const q = id ? this.sb.from('events').update(payload).eq('id', id) : this.sb.from('events').insert(payload);
       const { data, error } = await q.select().single();

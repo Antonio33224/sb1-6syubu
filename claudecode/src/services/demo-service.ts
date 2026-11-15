@@ -4,7 +4,8 @@
  * Persiste no localStorage do navegador. Nada é enviado a servidores.
  * Implementa as mesmas regras de negócio do backend Supabase.
  */
-import { buildDemoDatabase, DEMO_DB_VERSION, type DemoDB } from '@/data/demo-seed';
+import { buildDemoDatabase, demoPricesFor, DEMO_DB_VERSION, type DemoDB } from '@/data/demo-seed';
+import { normalizePrices, validatePrices } from '@/lib/pricing';
 import { blobToDataUrl, compressImage } from '@/lib/image';
 import {
   MAX_REVIEW_PHOTOS,
@@ -64,6 +65,18 @@ export class DemoService implements DataService {
           const raw = localStorage.getItem(DB_KEY);
           if (raw) {
             const parsed = JSON.parse(raw) as DemoDB;
+            // v4 → v5: adiciona os campos de preço sem apagar avaliações/contas criadas localmente.
+            if (parsed.version === 4) {
+              const fresh = buildDemoDatabase();
+              parsed.venues = parsed.venues.map((v) => (v.is_demo ? { ...demoPricesFor(v.slug), ...v } : { ...normalizePrices(v), ...v }));
+              const known = new Set(parsed.events.map((e) => e.slug));
+              const ids = new Set(parsed.venues.map((v) => v.id));
+              parsed.events.push(...fresh.events.filter((e) => !known.has(e.slug) && ids.has(e.venue_id) && e.event_date >= new Date().toISOString().slice(0, 10)));
+              parsed.version = DEMO_DB_VERSION;
+              this.db = parsed;
+              this.persist();
+              return parsed;
+            }
             if (parsed.version === DEMO_DB_VERSION) {
               this.db = parsed;
               return parsed;
@@ -545,12 +558,14 @@ export class DemoService implements DataService {
     upsertVenue: async (v: Partial<Venue> & { name: string }) => {
       const db = await this.requireAdmin();
       if (!v.name.trim()) throw new ServiceError('Nome obrigatório.');
+      const pErr = validatePrices(v);
+      if (pErr) throw new ServiceError(pErr);
       const slug = v.slug?.trim() || slugify(v.name);
       if (db.venues.some((x) => x.slug === slug && x.id !== v.id)) throw new ServiceError('Já existe um estabelecimento com este slug.');
       if (v.id) {
         const cur = db.venues.find((x) => x.id === v.id);
         if (!cur) throw new ServiceError('Registro não encontrado.');
-        Object.assign(cur, v, { slug, approved: cur.approved });
+        Object.assign(cur, v, normalizePrices({ ...cur, ...v }), { slug, approved: cur.approved });
         this.persist();
         return cur;
       }
@@ -559,7 +574,7 @@ export class DemoService implements DataService {
         city: v.city ?? 'Rio de Janeiro', state: v.state ?? 'RJ', neighborhood: v.neighborhood ?? '', address: v.address ?? '',
         latitude: v.latitude ?? -22.9068, longitude: v.longitude ?? -43.1729, cover_image: v.cover_image || '/images/dance-floor.jpg',
         gallery: v.gallery ?? [], instagram_url: v.instagram_url ?? null, website_url: v.website_url ?? null,
-        price_range: v.price_range ?? 2, music_styles: v.music_styles ?? [], opening_days: v.opening_days ?? [], approved: false,
+        price_range: v.price_range ?? 2, ...normalizePrices(v), music_styles: v.music_styles ?? [], opening_days: v.opening_days ?? [], approved: false,
         is_demo: false, created_at: now(),
       };
       db.venues.push(venue);
@@ -589,7 +604,8 @@ export class DemoService implements DataService {
       if (e.id) {
         const cur = db.events.find((x) => x.id === e.id);
         if (!cur) throw new ServiceError('Evento não encontrado.');
-        Object.assign(cur, e, { slug });
+        const { venue: _v, ...patch } = e as typeof e & { venue?: unknown };
+        Object.assign(cur, patch, { slug });
         this.persist();
         return cur;
       }
