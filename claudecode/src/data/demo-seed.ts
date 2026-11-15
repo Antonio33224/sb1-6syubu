@@ -26,7 +26,7 @@ import type {
   Favorite,
 } from '@/types';
 
-export const DEMO_DB_VERSION = 4;
+export const DEMO_DB_VERSION = 5;
 
 export interface DemoCredential {
   user_id: string;
@@ -226,6 +226,40 @@ const VENUES: VenueSeed[] = [
   },
 ];
 
+// ---------------------------------------------------------------- prices
+/**
+ * Preços DEMONSTRATIVOS (fictícios), por slug:
+ * [média por pessoa, entrada mín, entrada máx, drink mín, drink máx, consumação mín, consumação máx]
+ * Locais ausentes desta tabela ficam com preço "não informado" de propósito,
+ * para demonstrar o estado vazio da interface.
+ */
+type PriceTuple = [number, number, number, number, number, number, number];
+export const DEMO_PRICES: Record<string, PriceTuple> = {
+  'the-night-edition': [180, 120, 200, 30, 50, 140, 220],
+  'summer-experience': [240, 150, 260, 35, 60, 180, 300],
+  'rave-in-the-jungle': [320, 260, 340, 25, 45, 250, 380],
+  'paradise-club': [150, 60, 120, 30, 50, 120, 180],
+  'festival-tropicalia': [280, 220, 340, 20, 40, 220, 320],
+  'club-vibe': [110, 40, 80, 25, 40, 90, 140],
+  'sunset-party': [120, 50, 90, 25, 45, 100, 150],
+  'velvet-room': [160, 60, 120, 30, 55, 130, 200],
+  concreto: [100, 50, 90, 20, 35, 80, 130],
+  'noir-club': [260, 100, 200, 40, 70, 200, 350],
+  'baile-da-lapa': [60, 20, 40, 15, 25, 40, 80],
+  'estacao-22': [90, 30, 60, 20, 35, 70, 110],
+  'ilha-sound': [600, 450, 650, 35, 60, 500, 750],
+  'rooftop-360': [200, 0, 80, 40, 65, 160, 250],
+  'bloco-underground': [55, 20, 35, 12, 25, 40, 70],
+  'mare-alta': [90, 40, 60, 18, 30, 70, 110],
+};
+
+export function demoPricesFor(slug: string): Partial<Venue> {
+  const p = DEMO_PRICES[slug];
+  if (!p) return { avg_price: null, entry_price_min: null, entry_price_max: null, drink_price_min: null, drink_price_max: null, spend_min: null, spend_max: null };
+  const [avg_price, entry_price_min, entry_price_max, drink_price_min, drink_price_max, spend_min, spend_max] = p;
+  return { avg_price, entry_price_min, entry_price_max, drink_price_min, drink_price_max, spend_min, spend_max };
+}
+
 // ---------------------------------------------------------------- users
 const FIRST = ['Ana', 'Bruno', 'Camila', 'Diego', 'Elisa', 'Felipe', 'Gabriela', 'Henrique', 'Isabela', 'João', 'Larissa', 'Marcelo', 'Natália', 'Otávio', 'Paula', 'Rafael', 'Sofia', 'Thiago', 'Valentina', 'Vinícius', 'Yasmin', 'Lucas', 'Mariana', 'Pedro'];
 const LAST = ['Ferraz', 'Monteiro', 'Siqueira', 'Barreto', 'Lacerda', 'Pacheco', 'Teixeira', 'Rangel', 'Coutinho', 'Valente', 'Moraes', 'Amaral'];
@@ -311,6 +345,12 @@ const EVENTS: EventSeed[] = [
   { slug: 'the-night-edition-vol-23', name: 'The Night Edition Vol. 23', venue: 'the-night-edition', offsetDays: -24, time: '23:00', price: 160, djs: ['Mira Sol', 'Teo Lune'], styles: ['House', 'Techno'], cover: 'confetti-crowd', description: 'Edição de primavera com estreia do novo sistema de som.' },
   { slug: 'rave-in-the-jungle-solstice', name: 'Rave in the Jungle — Solstice', venue: 'rave-in-the-jungle', offsetDays: -58, time: '16:00', price: 260, djs: ['Orfeu', 'Hollow'], styles: ['Techno'], cover: 'stage-haze', description: 'Edição de inverno com 22 horas de duração.' },
   { slug: 'summer-experience-closing', name: 'Summer Experience — Closing', venue: 'summer-experience', offsetDays: -40, time: '22:00', price: 200, djs: ['Dante Rios'], styles: ['House'], cover: 'stage-glow', description: 'Encerramento da temporada anterior.' },
+  // v5 — mais datas nesta semana (programação fictícia). Sempre ao FINAL da lista: os IDs são determinísticos por índice.
+  { slug: 'paradise-fridays', name: 'Paradise Fridays', venue: 'paradise-club', offsetDays: 1, time: '23:00', price: 100, djs: ['Juno', 'Caio Brisa'], styles: ['House'], cover: 'dj-booth', description: 'A sexta da casa com residentes e pista principal aberta desde cedo.' },
+  { slug: 'paradise-sunday-session', name: 'Paradise Sunday Session', venue: 'paradise-club', offsetDays: 4, time: '18:00', price: 60, djs: ['Rafa Leme'], styles: ['House', 'Open format'], cover: 'cocktails', description: 'Sessão de fim de tarde no lounge, com set estendido do residente.' },
+  { slug: 'club-vibe-house-club', name: 'House Club', venue: 'club-vibe', offsetDays: 6, time: '23:00', price: 70, djs: ['Tati Groove', 'Nico Ventura'], styles: ['House'], cover: 'dance-floor', description: 'Noite de house com cabine no centro da pista.' },
+  { slug: 'velvet-trap-session', name: 'Velvet Trap Session', venue: 'velvet-room', offsetDays: 2, time: '23:30', price: 80, djs: ['Lena B'], styles: ['Trap'], cover: 'glasses', description: 'Sessão de trap com convidados da cena local.' },
+  { slug: 'baile-da-lapa-domingueira', name: 'Domingueira do Baile', venue: 'baile-da-lapa', offsetDays: 5, time: '20:00', price: 30, djs: ['MC Aurora', 'DJ Caveirinha'], styles: ['Funk'], cover: 'crowd-hearts', description: 'Edição de domingo, mais cedo, com MCs convidados.' },
 ];
 
 // ---------------------------------------------------------------- builder
@@ -361,7 +401,7 @@ export function buildDemoDatabase(nowMs = Date.now()): Omit<DemoDB, 'credentials
     id: demoUuid(2, i + 1), name: v.name, slug: v.slug, description: v.description, category: v.category,
     city: v.city, state: v.state, neighborhood: v.neighborhood, address: v.address, latitude: v.lat, longitude: v.lng,
     cover_image: img(v.cover), gallery: v.gallery.map(img), instagram_url: `https://instagram.com/${v.slug.replace(/-/g, '')}`,
-    website_url: null, price_range: v.price, music_styles: v.styles, opening_days: v.days, approved: false,
+    website_url: null, price_range: v.price, ...demoPricesFor(v.slug), music_styles: v.styles, opening_days: v.days, approved: false,
     is_demo: true, created_at: iso(nowMs - 420 * DAY),
   }));
 
