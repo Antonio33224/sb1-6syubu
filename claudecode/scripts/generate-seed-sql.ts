@@ -54,9 +54,10 @@ out.push('');
 
 for (const v of db.venues)
   out.push(
-    `insert into public.venues (id, name, slug, description, category, city, state, neighborhood, address, latitude, longitude, cover_image, gallery, instagram_url, website_url, price_range, music_styles, opening_days, is_demo, created_at) values (${[
+    `insert into public.venues (id, name, slug, description, category, city, state, neighborhood, address, latitude, longitude, cover_image, gallery, instagram_url, website_url, price_range, avg_price, entry_price_min, entry_price_max, drink_price_min, drink_price_max, spend_min, spend_max, music_styles, opening_days, is_demo, created_at) values (${[
       v.id, v.name, v.slug, v.description, v.category, v.city, v.state, v.neighborhood, v.address, v.latitude, v.longitude,
-      v.cover_image, v.gallery, v.instagram_url, v.website_url, v.price_range, v.music_styles, v.opening_days, true, v.created_at,
+      v.cover_image, v.gallery, v.instagram_url, v.website_url, v.price_range, v.avg_price, v.entry_price_min, v.entry_price_max,
+      v.drink_price_min, v.drink_price_max, v.spend_min, v.spend_max, v.music_styles, v.opening_days, true, v.created_at,
     ].map(q).join(', ')}) on conflict (id) do nothing;`,
   );
 out.push('');
