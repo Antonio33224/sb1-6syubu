@@ -3,7 +3,11 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { ArrowRight, ExternalLink, Globe, Instagram, MapPin, Star } from 'lucide-react';
+import { ArrowRight, CalendarDays, ExternalLink, Globe, Instagram, MapPin, Star } from 'lucide-react';
+import { PricePanel } from '@/components/venue/PriceDisplay';
+import { WeeklyLineup } from '@/components/venue/WeeklyLineup';
+import { brl, hasAvgPrice } from '@/lib/pricing';
+import { localIso, weekWindow } from '@/lib/week';
 import { useApp } from '@/components/providers/AppProviders';
 import { Photo } from '@/components/ui/Photo';
 import { Score, ReviewCount } from '@/components/ui/Score';
@@ -14,8 +18,7 @@ import { EventCard } from '@/components/cards/EventCard';
 import { DemoTag, EmptyState, Skeleton } from '@/components/ui/States';
 import { Tabs } from '@/components/ui/Controls';
 import { useAsync } from '@/hooks/useAsync';
-import { CATEGORY_LABEL, formatBRL, formatEventDate, priceLabel } from '@/lib/format';
-import { DISTRIBUTION_LABELS } from '@/lib/rating';
+import { CATEGORY_LABEL, formatBRL, formatEventDate, priceLabel } from '@/lib/format';import { DISTRIBUTION_LABELS } from '@/lib/rating';
 import { CRITERIA, type ReviewSort } from '@/types';
 
 const VenueMap = dynamic(() => import('@/components/map/VenueMap').then((m) => m.VenueMap), {
@@ -34,7 +37,8 @@ export default function VenuePage() {
     if (!venue) return null;
     const [stats, upcoming, past, mine] = await Promise.all([
       data.getVenueStats(venue.id),
-      data.listEvents({ venueId: venue.id, upcomingOnly: true }),
+      // data local (não UTC) para não perder as atrações de hoje à noite
+      data.listEvents({ venueId: venue.id, from: localIso(new Date()) }),
       data.listEvents({ venueId: venue.id, pastOnly: true }),
       user ? data.getMyReview(venue.id) : Promise.resolve(null),
     ]);
@@ -102,12 +106,29 @@ export default function VenuePage() {
               <Score value={count ? stats!.avg_rating : null} size="xl" />
               <ReviewCount n={count} className="mt-2 block" />
             </div>
+            <a href="#precos" className="group block border-l border-blue/50 pl-6 sm:pl-8" aria-label="Ver média de preços">
+              <p className="text-[9px] font-extrabold uppercase tracking-wide2 text-blue">Média de preços</p>
+              {hasAvgPrice(venue) ? (
+                <>
+                  <p className="mt-2 font-display text-[44px] font-extrabold leading-none tracking-tight text-blue sm:text-[56px]">{brl(venue.avg_price)}</p>
+                  <p className="mt-2 text-[11px] font-semibold uppercase tracking-nav text-bone/70">Por pessoa{venue.is_demo ? ' · exemplo' : ''}</p>
+                </>
+              ) : (
+                <>
+                  <p className="mt-2 font-display text-[32px] font-extrabold leading-none tracking-tight text-bone/85">{priceLabel(venue.price_range)}</p>
+                  <p className="mt-2 text-[11px] font-semibold uppercase tracking-nav text-mute">Média não informada</p>
+                </>
+              )}
+            </a>
             <div className="flex flex-wrap gap-3">
               <Link href={`/avaliar?local=${venue.slug}`} className="btn-primary">
                 <Star className="h-4 w-4" /> {mine ? 'Atualizar avaliação' : 'Avaliar'}
               </Link>
               <FavoriteButton venueId={venue.id} />
               <ShareButton title={venue.name} />
+              <a href="#atracoes" className="btn-ghost">
+                <CalendarDays className="h-4 w-4" /> Atrações
+              </a>
               <a href="#mapa" className="btn-ghost">
                 <MapPin className="h-4 w-4" /> Ver no mapa
               </a>
@@ -127,6 +148,8 @@ export default function VenuePage() {
             ))}
           </div>
         </div>
+        <div id="precos" className="flex scroll-mt-24 flex-col gap-6">
+        <PricePanel venue={venue} />
         <dl className="card divide-y divide-line">
           <InfoRow label="Endereço" value={venue.address || '—'} />
           <InfoRow label="Funcionamento" value={venue.opening_days.join(', ') || '—'} />
@@ -141,7 +164,11 @@ export default function VenuePage() {
             )}
           </div>
         </dl>
+        </div>
       </section>
+
+      {/* ATRAÇÕES DA SEMANA */}
+      <WeeklyLineup venue={venue} events={upcoming} nextLater={upcoming.find((e) => e.event_date > weekWindow().to) ?? null} />
 
       {/* AVALIAÇÕES */}
       <section id="avaliacoes" className="scroll-mt-24 border-t border-line">
