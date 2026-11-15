@@ -2,7 +2,8 @@
 import dynamic from 'next/dynamic';
 import { Suspense, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { LayoutGrid, LocateFixed, Map as MapIcon } from 'lucide-react';
+import { LayoutGrid, LocateFixed, Map as MapIcon, X } from 'lucide-react';
+import { findCategory } from '@/lib/categories';
 import { clsx } from 'clsx';
 import { useApp, useToast } from '@/components/providers/AppProviders';
 import { PageIntro, EmptyState, Skeleton } from '@/components/ui/States';
@@ -74,6 +75,8 @@ function Discover() {
   const [when, setWhen] = useState('todas');
   const [view, setView] = useState<'grid' | 'map'>('grid');
   const [geo, setGeo] = useState<{ lat: number; lng: number } | null>(null);
+  const [categorySlug, setCategorySlug] = useState<string | null>(params.get('categoria'));
+  const discoverCategory = findCategory(categorySlug);
 
   const { data: base } = useAsync(async () => {
     const [venues, events, stats, cities, settings] = await Promise.all([
@@ -111,6 +114,7 @@ function Discover() {
     const category: VenueCategory | undefined = quick === 'festivais' ? 'festival' : undefined;
 
     let venues = base.venues.filter((v) => {
+      if (discoverCategory && !discoverCategory.match(v)) return false;
       if (city && v.city !== city) return false;
       if (activeStyle && !v.music_styles.includes(activeStyle)) return false;
       if (category && v.category !== category) return false;
@@ -142,7 +146,14 @@ function Discover() {
     });
     const eventsFirst = quick === 'semana' || quick === 'fimdesemana';
     return { venues, events, eventsFirst };
-  }, [base, quick, city, style, price, minRating, when, geo]);
+  }, [base, quick, city, style, price, minRating, when, geo, discoverCategory]);
+
+  const clearCategory = () => {
+    setCategorySlug(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('categoria');
+    window.history.replaceState(null, '', url.toString());
+  };
 
   return (
     <>
@@ -154,6 +165,16 @@ function Discover() {
       />
 
       <section className="container-site py-10 sm:py-14">
+        {discoverCategory && (
+          <div className="relative mb-8 flex flex-wrap items-center justify-between gap-4 overflow-hidden rounded-card border border-blue/40 bg-blue-soft px-5 py-4">
+            <div>
+              <p className="text-[9px] font-extrabold uppercase tracking-wide2 text-blue">Categoria</p>
+              <p className="mt-1 font-display text-[22px] font-extrabold uppercase tracking-tight">{discoverCategory.label}</p>
+              <p className="mt-1 text-[12px] text-mute">{discoverCategory.blurb}</p>
+            </div>
+            <button onClick={clearCategory} className="btn-ghost btn-sm"><X className="h-3.5 w-3.5" /> Limpar categoria</button>
+          </div>
+        )}
         <div className="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 no-scrollbar sm:mx-0 sm:flex-wrap sm:px-0">
           {QUICK.map((q) => (
             <button key={q.value} onClick={() => pickQuick(q.value)} className={clsx('chip shrink-0', quick === q.value && 'chip-active')}>
