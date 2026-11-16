@@ -3,10 +3,12 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
-import { LogOut, Menu, Search, Settings, ShieldCheck, User, X } from 'lucide-react';
+import { Activity, Bell, CreditCard, Gift, History, LogOut, Menu, Search, Settings, ShieldCheck, Trophy, User, X } from 'lucide-react';
 import { Logo } from '@/components/brand/Logo';
 import { Avatar } from '@/components/ui/Avatar';
 import { useApp } from '@/components/providers/AppProviders';
+import { usePlus } from '@/components/providers/PlusProvider';
+import { PlusBadge } from '@/components/plus/PlusBadge';
 import { SearchOverlay } from './SearchOverlay';
 
 export const NAV = [
@@ -20,6 +22,7 @@ export function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, data, authReady } = useApp();
+  const { isPremium, unread } = usePlus();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -109,6 +112,23 @@ export function Header() {
               <Search className="h-[18px] w-[18px]" strokeWidth={1.8} />
             </button>
 
+            <Link
+              href={isPremium ? '/meu-ranking' : '/classify-plus'}
+              className="hidden items-center gap-1 rounded-full px-2 font-display text-[12px] font-extrabold uppercase tracking-[0.14em] text-bone transition-colors hover:text-blue md:inline-flex"
+              title={isPremium ? 'Meu Ranking' : 'Conheça o Classify+'}
+            >
+              Classify<span className="text-blue">+</span>
+            </Link>
+
+            {user && isPremium && (
+              <Link href="/alertas" className="relative flex h-10 w-10 items-center justify-center rounded-full text-bone/85 transition-colors hover:text-blue" aria-label={unread ? `Alertas: ${unread} não lidos` : 'Alertas'}>
+                <Bell className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                {unread > 0 && (
+                  <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue px-1 text-[9px] font-extrabold text-ink">{unread > 9 ? '9+' : unread}</span>
+                )}
+              </Link>
+            )}
+
             {!authReady ? (
               <span className="hidden h-9 w-[92px] sm:block" />
             ) : user ? (
@@ -124,7 +144,13 @@ export function Header() {
                 </button>
                 {userMenu && (
                   <div role="menu" className="absolute right-0 mt-2 w-56 animate-fade-in overflow-hidden rounded-card border border-line bg-ink-2 py-2">
+                    {isPremium && <div className="px-4 pb-2 pt-1"><PlusBadge size="xs" /></div>}
                     <MenuLink href="/perfil" icon={<User className="h-4 w-4" />}>Meu perfil</MenuLink>
+                    <MenuLink href="/meu-ranking" icon={<Trophy className="h-4 w-4" />}>Meu Ranking</MenuLink>
+                    <MenuLink href="/pulso" icon={<Activity className="h-4 w-4" />}>Pulso da Noite</MenuLink>
+                    <MenuLink href="/retrospectiva" icon={<History className="h-4 w-4" />}>Minha retrospectiva</MenuLink>
+                    <MenuLink href="/beneficios" icon={<Gift className="h-4 w-4" />}>Benefícios</MenuLink>
+                    <MenuLink href="/assinatura" icon={<CreditCard className="h-4 w-4" />}>Minha assinatura</MenuLink>
                     <MenuLink href="/perfil?tab=configuracoes" icon={<Settings className="h-4 w-4" />}>Configurações</MenuLink>
                     {user.role === 'admin' && <MenuLink href="/admin" icon={<ShieldCheck className="h-4 w-4" />}>Painel admin</MenuLink>}
                     <button onClick={signOut} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[12px] text-mute transition-colors hover:bg-panel hover:text-bone">
@@ -172,8 +198,13 @@ export function Header() {
             ))}
           </nav>
           <div className="mt-auto flex flex-col gap-3">
+            <Link href={isPremium ? '/meu-ranking' : '/classify-plus'} className="plus-frame flex h-12 items-center justify-center font-display text-[13px] font-extrabold uppercase tracking-[0.16em]">
+              {isPremium ? 'Meu Ranking' : <>Conheça o Classify<span className="text-blue">+</span></>}
+            </Link>
             {user ? (
               <>
+                {isPremium && <Link href="/alertas" className="btn-ghost w-full">Alertas{unread ? ` (${unread})` : ''}</Link>}
+                <Link href="/assinatura" className="btn-ghost w-full">Minha assinatura</Link>
                 <Link href="/perfil" className="btn-outline w-full">Meu perfil</Link>
                 {user.role === 'admin' && <Link href="/admin" className="btn-ghost w-full">Painel admin</Link>}
                 <button onClick={signOut} className="btn-ghost w-full">Sair</button>

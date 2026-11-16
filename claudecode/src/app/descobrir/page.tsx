@@ -1,6 +1,12 @@
 'use client';
 import dynamic from 'next/dynamic';
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { usePlus } from '@/components/providers/PlusProvider';
+import { AdvancedFilters } from '@/components/plus/AdvancedFilters';
+import { AdSlot } from '@/components/plus/AdSlot';
+import { IndicatedRail } from '@/components/plus/Indicated';
+import { applyAdvancedFilters } from '@/lib/plus/advanced-filters';
+import type { AdvancedFilterState } from '@/types';
 import { useSearchParams } from 'next/navigation';
 import { LayoutGrid, LocateFixed, Map as MapIcon, X } from 'lucide-react';
 import { findCategory } from '@/lib/categories';
@@ -77,6 +83,24 @@ function Discover() {
   const [geo, setGeo] = useState<{ lat: number; lng: number } | null>(null);
   const [categorySlug, setCategorySlug] = useState<string | null>(params.get('categoria'));
   const discoverCategory = findCategory(categorySlug);
+  const { plus, isPremium } = usePlus();
+  const [adv, setAdv] = useState<AdvancedFilterState>({});
+
+  // Filtros avançados salvos (assinantes).
+  useEffect(() => {
+    if (!isPremium) return;
+    plus.getPreferences().then((p) => p.saved_filters && setAdv(p.saved_filters)).catch(() => {});
+  }, [isPremium, plus]);
+
+  const requestGeo = () => {
+    if (geo) return;
+    if (!navigator.geolocation) return toast('Geolocalização indisponível neste navegador.', 'error');
+    navigator.geolocation.getCurrentPosition(
+      (p) => setGeo({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => toast('Não foi possível obter sua localização; o filtro de distância não será aplicado.', 'error'),
+      { timeout: 8000 },
+    );
+  };
 
   const { data: base } = useAsync(async () => {
     const [venues, events, stats, cities, settings] = await Promise.all([
@@ -123,6 +147,8 @@ function Discover() {
       if (Number(minRating) && (base.stats[v.id]?.avg_rating ?? 0) < Number(minRating)) return false;
       return true;
     });
+    // Filtros avançados Classify+ (somente assinantes; combinados com os básicos).
+    if (isPremium) venues = applyAdvancedFilters(venues, adv, { stats: base.stats, geo });
     if (quick === 'proximas' && geo) venues = venues.slice().sort((a, b) => distanceKm(geo, a) - distanceKm(geo, b));
     else venues = venues.slice().sort((a, b) => (base.stats[b.id]?.score ?? 0) - (base.stats[a.id]?.score ?? 0));
 
@@ -146,7 +172,7 @@ function Discover() {
     });
     const eventsFirst = quick === 'semana' || quick === 'fimdesemana';
     return { venues, events, eventsFirst };
-  }, [base, quick, city, style, price, minRating, when, geo, discoverCategory]);
+  }, [base, quick, city, style, price, minRating, when, geo, discoverCategory, isPremium, adv]);
 
   const clearCategory = () => {
     setCategorySlug(null);
@@ -207,6 +233,8 @@ function Discover() {
           </div>
         </div>
 
+        <AdvancedFilters value={adv} onChange={setAdv} onNeedLocation={requestGeo} hasLocation={!!geo} />
+
         {!result ? (
           <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{[0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-[340px]" />)}</div>
         ) : (
@@ -247,6 +275,8 @@ function Discover() {
           </div>
         )}
       </section>
+      <AdSlot id="descobrir-bottom" className="pb-8" />
+      {base && <IndicatedRail venues={base.venues} stats={base.stats} className="pb-16 sm:pb-24" />}
     </>
   );
 }

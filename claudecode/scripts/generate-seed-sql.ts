@@ -8,6 +8,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildDemoDatabase } from '../src/data/demo-seed';
+import { DEMO_BENEFITS } from '../src/data/plus-demo';
 
 const db = buildDemoDatabase();
 
@@ -54,10 +55,11 @@ out.push('');
 
 for (const v of db.venues)
   out.push(
-    `insert into public.venues (id, name, slug, description, category, city, state, neighborhood, address, latitude, longitude, cover_image, gallery, instagram_url, website_url, price_range, avg_price, entry_price_min, entry_price_max, drink_price_min, drink_price_max, spend_min, spend_max, music_styles, opening_days, is_demo, created_at) values (${[
+    `insert into public.venues (id, name, slug, description, category, city, state, neighborhood, address, latitude, longitude, cover_image, gallery, instagram_url, website_url, price_range, avg_price, entry_price_min, entry_price_max, drink_price_min, drink_price_max, spend_min, spend_max, music_styles, opening_days, audience_tags, capacity, opens_at, closes_at, is_indicated, is_demo, created_at) values (${[
       v.id, v.name, v.slug, v.description, v.category, v.city, v.state, v.neighborhood, v.address, v.latitude, v.longitude,
       v.cover_image, v.gallery, v.instagram_url, v.website_url, v.price_range, v.avg_price, v.entry_price_min, v.entry_price_max,
-      v.drink_price_min, v.drink_price_max, v.spend_min, v.spend_max, v.music_styles, v.opening_days, true, v.created_at,
+      v.drink_price_min, v.drink_price_max, v.spend_min, v.spend_max, v.music_styles, v.opening_days,
+      v.audience_tags ?? [], v.capacity ?? null, v.opens_at ?? null, v.closes_at ?? null, v.is_indicated ?? false, true, v.created_at,
     ].map(q).join(', ')}) on conflict (id) do nothing;`,
   );
 out.push('');
@@ -88,6 +90,22 @@ for (const f of db.favorites)
   out.push(`insert into public.favorites (id, user_id, venue_id, event_id, created_at) values (${[f.id, f.user_id, f.venue_id, f.event_id, f.created_at].map(q).join(', ')}) on conflict do nothing;`);
 for (const r of db.reports)
   out.push(`insert into public.review_reports (id, user_id, review_id, reason, status, created_at) values (${[r.id, r.user_id, r.review_id, r.reason, r.status, r.created_at].map(q).join(', ')}) on conflict do nothing;`);
+
+// Benefícios Classify+ DEMONSTRATIVOS (is_demo = true → exibidos como "Exemplo", não resgatáveis no Supabase)
+const bySlug = new Map(db.venues.map((v) => [v.slug, v]));
+DEMO_BENEFITS.forEach((b, i) => {
+  const v = bySlug.get(b.venueSlug);
+  if (!v) return;
+  const id = `00000000-0000-4000-8000-${(9_000_000 + i + 1).toString(16).padStart(12, '0')}`;
+  const values = [
+    ...[id, v.id, b.title, b.description, b.rules, b.how_to_redeem, v.cover_image].map(q),
+    `(current_date + ${Number(b.validDays)})`, // validade relativa à data de execução do seed
+    ...[b.total_quantity, true, true].map(q),
+  ];
+  out.push(
+    `insert into public.premium_benefits (id, venue_id, title, description, rules, how_to_redeem, image_url, valid_until, total_quantity, active, is_demo) values (${values.join(', ')}) on conflict (id) do nothing;`,
+  );
+});
 
 out.push('', 'select public.refresh_venue_approved(id) from public.venues;', 'commit;', '');
 

@@ -37,7 +37,7 @@ Contas de teste no modo demo (senha `classify123`):
 ## Configurar o Supabase
 
 1. Crie um projeto em [supabase.com](https://supabase.com).
-2. No **SQL Editor**, execute `supabase/migrations/0001_classify_schema.sql` (tabelas, índices, constraints, triggers, RLS, RPCs, buckets do Storage) e depois `supabase/migrations/0002_venue_prices.sql` (média e faixas de preço por casa; campos opcionais — `NULL` = não informado).
+2. No **SQL Editor**, execute `supabase/migrations/0001_classify_schema.sql` (tabelas, índices, constraints, triggers, RLS, RPCs, buckets do Storage), depois `supabase/migrations/0002_venue_prices.sql` (média e faixas de preço por casa; campos opcionais — `NULL` = não informado) e `supabase/migrations/0003_classify_plus.sql` (Classify+: assinaturas, preferências, alertas, benefícios, histórico, RLS).
 3. (Opcional) Execute `supabase/seed.sql` para carregar os dados demonstrativos — rode `npm run db:seed-sql` antes para gerar datas relativas a hoje.
 4. Copie `.env.example` para `.env.local` e preencha:
 
@@ -70,6 +70,47 @@ A **service_role key nunca é usada** pelo app. Somente a anon key (protegida po
 - **Selo CLASSIFYDJ APPROVED** automático, com critérios configuráveis e página explicativa.
 - **Painel admin**: métricas, CRUD de casas e eventos, usuários/papéis, moderação de avaliações e denúncias, newsletter (com exportação CSV), estilos musicais, parâmetros do selo e do algoritmo, remoção de dados demo.
 - **Auth**: cadastro, login, logout, recuperação e redefinição de senha, sessão persistente, páginas protegidas.
+
+## Classify+ (assinatura premium)
+
+**“Your night. Your ranking.”** Avaliar, enviar fotos e consultar rankings, notas, agenda, preços e cards **Indicado** continuam gratuitos. Assinantes **não** têm peso maior nas avaliações — o ranking público é idêntico para todos.
+
+| Rota | O que é |
+| --- | --- |
+| `/classify-plus` | Página de vendas (hero, demo do Meu Ranking com dados reais, comparativo, planos, FAQ) |
+| `/meu-ranking` | Pesos 0–100 para os 7 critérios; nota = Σ(média pública × peso) ÷ Σpesos (peso 0 é ignorado); até 10 configurações salvas |
+| `/descobrir` | Filtros básicos (todos) + **filtros avançados** Classify+ (gasto médio, público, capacidade, horário, dia, tipo, nota por critério, distância) |
+| `/alertas` | Seguir DJs/artistas, notificações (histórico, lidas/não lidas), preferências |
+| `/pulso` | Avaliações das últimas 6h–7 dias; sem dados → “não há dados recentes” |
+| `/retrospectiva` | Básico para todos; completo + card PNG (stories) / WhatsApp para assinantes |
+| `/beneficios` | Benefícios em casas parceiras, resgate com código (um por assinante) |
+| `/assinatura` | Plano, status, renovação, pagamentos, cancelar/retomar, portal de cobrança |
+| `/admin` → Classify+ / Benefícios | Métricas (estimado ≠ recebido) e CRUD de benefícios |
+
+**Planos:** mensal R$ 12,90 (7 dias grátis, uma vez por conta) · anual R$ 109,00 (≈ R$ 9,08/mês, ~30% de economia). Premissa interna (somente no admin): mix 70/30 → ticket ponderado ≈ R$ 11,75.
+
+**Estados:** gratuito · teste grátis · mensal ativa · anual ativa · cancelada (acesso até o fim do período pago) · expirada · pagamento recusado (sem acesso).
+
+### Pagamentos (Stripe)
+
+Escolhido por ter assinaturas recorrentes em BRL, teste grátis nativo, Checkout hospedado, Customer Portal e webhooks assinados. Integração via REST no servidor (sem SDK). Lógica de status isolada em `src/lib/server/billing.ts` para permitir um adaptador Mercado Pago no futuro.
+
+1. Execute `supabase/migrations/0003_classify_plus.sql` no SQL Editor.
+2. No Stripe, crie um produto com dois preços recorrentes em BRL (mensal 12,90 e anual 109,00) e preencha `STRIPE_PRICE_MONTHLY`/`STRIPE_PRICE_ANNUAL`. **O teste grátis é aplicado pelo checkout** (não configure trial no preço).
+3. Preencha `STRIPE_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (somente servidor).
+4. Crie o endpoint de webhook `https://SEU_DOMINIO/api/webhooks/stripe` com os eventos `checkout.session.completed`, `customer.subscription.created|updated|deleted`, `invoice.paid`, `invoice.payment_failed`, e copie o segredo para `STRIPE_WEBHOOK_SECRET`. Local: `stripe listen --forward-to localhost:3000/api/webhooks/stripe`.
+5. Ative o **Customer Portal** no Stripe (cancelamento ao fim do período).
+
+Fluxo: `/api/billing/checkout` cria a sessão → usuário paga no Stripe → o **webhook** (assinatura HMAC validada, idempotente) grava a assinatura → o acesso é liberado. O retorno do checkout apenas aguarda essa confirmação; nenhum pagamento é dado como aprovado sem ela. Nenhum dado de cartão passa pelo Classify DJ.
+
+**Modo demonstração:** o botão de assinar ativa uma assinatura local identificada como demonstração, **sem cobrança e sem registro de pagamento** (há também “Demo: encerrar período agora” para testar a expiração).
+
+### O que depende de configuração externa
+
+- **Cobrança real**: variáveis Stripe acima. Sem elas, a página de planos informa que as assinaturas ainda não estão disponíveis.
+- **Alertas por e-mail/push**: preferências e colunas `email_status`/`push_status` prontas; nenhum envio é feito até integrar um provedor (status `not_configured`).
+- **Banners de terceiros**: espaço `AdSlot` pronto; em produção só aparece com `NEXT_PUBLIC_ADS_ENABLED=true` e nunca para assinantes.
+- **Benefícios**: os demonstrativos são marcados “Exemplo” e não podem ser resgatados no Supabase; cadastre acordos reais no painel.
 
 ## Como o ranking é calculado
 

@@ -26,7 +26,7 @@ import type {
   Favorite,
 } from '@/types';
 
-export const DEMO_DB_VERSION = 5;
+export const DEMO_DB_VERSION = 6;
 
 export interface DemoCredential {
   user_id: string;
@@ -260,6 +260,43 @@ export function demoPricesFor(slug: string): Partial<Venue> {
   return { avg_price, entry_price_min, entry_price_max, drink_price_min, drink_price_max, spend_min, spend_max };
 }
 
+// ---------------------------------------------------------------- detalhes (filtros avançados)
+/**
+ * Detalhes DEMONSTRATIVOS (fictícios) por slug: [público, capacidade, abre, fecha].
+ * Casas ausentes ficam "não informado" de propósito — os filtros avançados as
+ * excluem quando o filtro correspondente está ativo (nada é estimado).
+ */
+type DetailTuple = [string[], number | null, string | null, string | null];
+export const DEMO_DETAILS: Record<string, DetailTuple> = {
+  'the-night-edition': [['Underground', 'Jovem adulto'], 3000, '23:00', '08:00'],
+  'summer-experience': [['Alto padrão', 'Jovem adulto'], 4500, '22:00', '06:00'],
+  'rave-in-the-jungle': [['Underground'], 8000, '16:00', '16:00'],
+  'paradise-club': [['Alto padrão', 'Turistas'], 1500, '23:00', '06:00'],
+  'club-vibe': [['30+', 'LGBTQIA+'], 600, '23:00', '05:00'],
+  'sunset-party': [['Turistas', 'Jovem adulto'], 900, '16:00', '23:00'],
+  'velvet-room': [['Jovem adulto'], 450, '23:00', '05:00'],
+  concreto: [['Underground', 'LGBTQIA+'], 1200, '23:59', '12:00'],
+  'noir-club': [['Alto padrão', '30+'], 800, '23:00', '05:00'],
+  'baile-da-lapa': [['Universitário', 'Jovem adulto'], 2000, '22:00', '05:00'],
+  'estacao-22': [['Universitário', 'Underground'], 700, '23:00', '06:00'],
+  'rooftop-360': [['30+', 'Turistas'], 300, '17:00', '01:00'],
+  'bloco-underground': [['Universitário', 'Underground'], 350, '22:00', '04:00'],
+};
+
+/** Casas demo marcadas como INDICADO (curadoria fictícia, apenas demonstração). */
+export const DEMO_INDICATED = new Set(['paradise-club', 'rooftop-360', 'estacao-22']);
+
+export function demoDetailsFor(slug: string): Partial<Venue> {
+  const d = DEMO_DETAILS[slug];
+  return {
+    audience_tags: d?.[0] ?? [],
+    capacity: d?.[1] ?? null,
+    opens_at: d?.[2] ?? null,
+    closes_at: d?.[3] ?? null,
+    is_indicated: DEMO_INDICATED.has(slug),
+  };
+}
+
 // ---------------------------------------------------------------- users
 const FIRST = ['Ana', 'Bruno', 'Camila', 'Diego', 'Elisa', 'Felipe', 'Gabriela', 'Henrique', 'Isabela', 'João', 'Larissa', 'Marcelo', 'Natália', 'Otávio', 'Paula', 'Rafael', 'Sofia', 'Thiago', 'Valentina', 'Vinícius', 'Yasmin', 'Lucas', 'Mariana', 'Pedro'];
 const LAST = ['Ferraz', 'Monteiro', 'Siqueira', 'Barreto', 'Lacerda', 'Pacheco', 'Teixeira', 'Rangel', 'Coutinho', 'Valente', 'Moraes', 'Amaral'];
@@ -401,7 +438,7 @@ export function buildDemoDatabase(nowMs = Date.now()): Omit<DemoDB, 'credentials
     id: demoUuid(2, i + 1), name: v.name, slug: v.slug, description: v.description, category: v.category,
     city: v.city, state: v.state, neighborhood: v.neighborhood, address: v.address, latitude: v.lat, longitude: v.lng,
     cover_image: img(v.cover), gallery: v.gallery.map(img), instagram_url: `https://instagram.com/${v.slug.replace(/-/g, '')}`,
-    website_url: null, price_range: v.price, ...demoPricesFor(v.slug), music_styles: v.styles, opening_days: v.days, approved: false,
+    website_url: null, price_range: v.price, ...demoPricesFor(v.slug), ...demoDetailsFor(v.slug), music_styles: v.styles, opening_days: v.days, approved: false,
     is_demo: true, created_at: iso(nowMs - 420 * DAY),
   }));
 

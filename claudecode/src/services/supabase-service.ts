@@ -69,6 +69,11 @@ const mapVenue = (r: Record<string, unknown>): Venue => ({
   ...Object.fromEntries(PRICE_FIELDS.map((f) => [f, r[f] === null || r[f] === undefined ? null : num(r[f])])),
   music_styles: (r.music_styles as string[]) ?? [],
   opening_days: (r.opening_days as string[]) ?? [],
+  audience_tags: (r.audience_tags as string[]) ?? [],
+  capacity: r.capacity === null || r.capacity === undefined ? null : num(r.capacity),
+  opens_at: (r.opens_at as string) ?? null,
+  closes_at: (r.closes_at as string) ?? null,
+  is_indicated: Boolean(r.is_indicated),
 });
 
 const mapReview = (r: Record<string, unknown>): VenueReview => {
@@ -84,6 +89,11 @@ export class SupabaseService implements DataService {
 
   constructor(url: string, anonKey: string) {
     this.sb = createClient(url, anonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+  }
+
+  /** Client compartilhado com o SupabasePlusService (mesma sessão). */
+  get client(): SupabaseClient {
+    return this.sb;
   }
 
   private async uid(): Promise<string | null> {

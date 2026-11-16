@@ -14,10 +14,14 @@ import { CATEGORY_LABEL, formatBRL, formatDate, slugify } from '@/lib/format';
 import { brl, hasAvgPrice } from '@/lib/pricing';
 import { localIso } from '@/lib/week';
 import type { EventItem, PlatformSettings, ReviewStatus, Venue, VenueCategory } from '@/types';
+import { AUDIENCE_OPTIONS } from '@/lib/plus/advanced-filters';
+import { BenefitsAdmin, PlusMetricsAdmin } from '@/components/plus/admin/PlusAdmin';
 
-type Tab = 'geral' | 'boates' | 'eventos' | 'usuarios' | 'avaliacoes' | 'denuncias' | 'newsletter' | 'config';
+type Tab = 'geral' | 'plus' | 'beneficios' | 'boates' | 'eventos' | 'usuarios' | 'avaliacoes' | 'denuncias' | 'newsletter' | 'config';
 const TABS: { value: Tab; label: string }[] = [
   { value: 'geral', label: 'Visão geral' },
+  { value: 'plus', label: 'Classify+' },
+  { value: 'beneficios', label: 'Benefícios' },
   { value: 'boates', label: 'Estabelecimentos' },
   { value: 'eventos', label: 'Eventos e atrações' },
   { value: 'usuarios', label: 'Usuários' },
@@ -56,6 +60,8 @@ export default function AdminPage() {
       <Tabs className="mt-10" value={tab} onChange={setTab} items={TABS} />
       <div className="mt-10">
         {tab === 'geral' && <Overview />}
+        {tab === 'plus' && <PlusMetricsAdmin />}
+        {tab === 'beneficios' && <BenefitsAdmin />}
         {tab === 'boates' && <VenuesAdmin />}
         {tab === 'eventos' && <EventsAdmin />}
         {tab === 'usuarios' && <UsersAdmin />}
@@ -278,6 +284,35 @@ function VenueForm({ initial, onClose }: { initial: Partial<Venue>; onClose: () 
           </div>
         </Field>
         <Field label="Descrição" full><textarea className="field h-auto resize-y py-3" rows={4} value={v.description ?? ''} onChange={(e) => set('description', e.target.value)} /></Field>
+        <fieldset className="rounded-card border border-line p-4 sm:col-span-2 sm:p-5">
+          <legend className="px-2 text-[10px] font-extrabold uppercase tracking-wide2 text-mute">Filtros avançados (Classify+) — opcional</legend>
+          <p className="mb-4 text-[11px] leading-relaxed text-mute">Deixe em branco o que não for confirmado: a casa simplesmente não aparece quando o filtro correspondente estiver ativo.</p>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Capacidade (pessoas)">
+              <input className="field" type="number" min={1} placeholder="Não informado" value={v.capacity ?? ''} onChange={(e) => set('capacity', e.target.value === '' ? null : Math.max(1, Math.round(Number(e.target.value))))} />
+            </Field>
+            <Field label="Abre às (HH:MM)">
+              <input className="field" type="time" value={v.opens_at ?? ''} onChange={(e) => set('opens_at', e.target.value || null)} />
+            </Field>
+            <Field label="Fecha às (HH:MM)">
+              <input className="field" type="time" value={v.closes_at ?? ''} onChange={(e) => set('closes_at', e.target.value || null)} />
+            </Field>
+          </div>
+          <p className="field-label mt-4">Tipo de público</p>
+          <div className="flex flex-wrap gap-2">
+            {AUDIENCE_OPTIONS.map((a) => {
+              const on = v.audience_tags?.includes(a);
+              return <button type="button" key={a} onClick={() => set('audience_tags', on ? v.audience_tags!.filter((x) => x !== a) : [...(v.audience_tags ?? []), a])} className={clsx('chip', on && 'chip-active')}>{a}</button>;
+            })}
+          </div>
+        </fieldset>
+        <label className="flex cursor-pointer items-start gap-3 rounded-card border border-line p-4 sm:col-span-2">
+          <input type="checkbox" className="mt-1 accent-[#83A9F5]" checked={!!v.is_indicated} onChange={(e) => set('is_indicated', e.target.checked)} />
+          <span>
+            <span className="text-[13px] font-semibold">Exibir como INDICADO</span>
+            <span className="mt-1 block text-[11px] text-mute">Card de curadoria visível para todos (inclusive assinantes), sempre com o rótulo “Indicado”. Não altera notas nem posições nos rankings.</span>
+          </span>
+        </label>
         <div className="sm:col-span-2"><FieldError message={error} /></div>
         <div className="flex justify-end gap-3 sm:col-span-2">
           <button type="button" onClick={onClose} className="btn-ghost btn-sm">Cancelar</button>

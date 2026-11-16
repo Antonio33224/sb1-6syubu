@@ -14,6 +14,8 @@ import { CategoryGrid } from './CategoryGrid';
 import { CommunityReviews } from './CommunityReviews';
 import { CommunityCTA } from './CommunityCTA';
 import { Newsletter } from './Newsletter';
+import { IndicatedRail } from '@/components/plus/Indicated';
+import { AdSlot } from '@/components/plus/AdSlot';
 
 export type HomeEvent = EventItem & { venue: Venue };
 
@@ -91,7 +93,9 @@ export function HomeView() {
         <>
           <FeaturedEvents data={scoped} city={city} />
           <TopVenues rows={rankings ?? null} city={city} />
+          {scoped && <IndicatedRail venues={scoped.venues} stats={scoped.stats} className="py-14 sm:py-20" />}
           <WeekAttractions data={scoped} city={city} />
+          <AdSlot id="home-mid" className="py-6" />
           <RankingsBoard data={scoped} rows={rankings ?? null} city={city} />
           <CategoryGrid data={scoped} />
           <CommunityReviews data={scoped} city={city} />

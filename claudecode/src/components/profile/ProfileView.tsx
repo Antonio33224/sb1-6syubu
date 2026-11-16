@@ -10,6 +10,8 @@ import { ReviewCard } from '@/components/cards/ReviewCard';
 import { VenueCard } from '@/components/cards/VenueCard';
 import { EventCard } from '@/components/cards/EventCard';
 import { ClassifyMark } from '@/components/brand/ApprovedSeal';
+import { usePlus } from '@/components/providers/PlusProvider';
+import { PlusBadge } from '@/components/plus/PlusBadge';
 import { Tabs, FieldError } from '@/components/ui/Controls';
 import { EmptyState, Skeleton } from '@/components/ui/States';
 import { useAsync } from '@/hooks/useAsync';
@@ -21,6 +23,7 @@ type Tab = 'avaliacoes' | 'favoritos' | 'conquistas' | 'configuracoes';
 
 export function ProfileView({ profile, own, initialTab = 'avaliacoes' }: { profile: Profile; own: boolean; initialTab?: Tab }) {
   const { data, version, favorites } = useApp();
+  const { isPremium } = usePlus();
   const [tab, setTab] = useState<Tab>(initialTab);
 
   const { data: payload } = useAsync(async () => {
@@ -56,7 +59,11 @@ export function ProfileView({ profile, own, initialTab = 'avaliacoes' }: { profi
           <div className="flex flex-col gap-7 sm:flex-row sm:items-end">
             <Avatar profile={profile} size={112} className="text-3xl" />
             <div>
-              {level ? <p className="eyebrow text-blue">{level.name}</p> : <p className="eyebrow">Novo na comunidade</p>}
+              <div className="flex flex-wrap items-center gap-3">
+                {level ? <p className="eyebrow text-blue">{level.name}</p> : <p className="eyebrow">Novo na comunidade</p>}
+                {/* Status de assinatura é privado: o selo aparece apenas no próprio perfil. */}
+                {own && isPremium && <Link href="/assinatura"><PlusBadge /></Link>}
+              </div>
               <h1 className="mt-3 font-display text-[40px] font-extrabold uppercase leading-[0.95] tracking-tight sm:text-[60px]">{profile.full_name || profile.username}</h1>
               <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-mute">
                 <span>@{profile.username}</span>

@@ -4,7 +4,7 @@
  * Persiste no localStorage do navegador. Nada é enviado a servidores.
  * Implementa as mesmas regras de negócio do backend Supabase.
  */
-import { buildDemoDatabase, demoPricesFor, DEMO_DB_VERSION, type DemoDB } from '@/data/demo-seed';
+import { buildDemoDatabase, demoDetailsFor, demoPricesFor, DEMO_DB_VERSION, type DemoDB } from '@/data/demo-seed';
 import { normalizePrices, validatePrices } from '@/lib/pricing';
 import { blobToDataUrl, compressImage } from '@/lib/image';
 import {
@@ -65,6 +65,7 @@ export class DemoService implements DataService {
           const raw = localStorage.getItem(DB_KEY);
           if (raw) {
             const parsed = JSON.parse(raw) as DemoDB;
+            let migrated = false;
             // v4 → v5: adiciona os campos de preço sem apagar avaliações/contas criadas localmente.
             if (parsed.version === 4) {
               const fresh = buildDemoDatabase();
@@ -72,7 +73,18 @@ export class DemoService implements DataService {
               const known = new Set(parsed.events.map((e) => e.slug));
               const ids = new Set(parsed.venues.map((v) => v.id));
               parsed.events.push(...fresh.events.filter((e) => !known.has(e.slug) && ids.has(e.venue_id) && e.event_date >= new Date().toISOString().slice(0, 10)));
+              parsed.version = 5;
+              migrated = true;
+            }
+            // v5 → v6: detalhes para filtros avançados e marcação INDICADO (casas demo).
+            if (parsed.version === 5) {
+              parsed.venues = parsed.venues.map((v) =>
+                v.is_demo ? { ...demoDetailsFor(v.slug), ...v } : { audience_tags: [], capacity: null, opens_at: null, closes_at: null, is_indicated: false, ...v },
+              );
               parsed.version = DEMO_DB_VERSION;
+              migrated = true;
+            }
+            if (migrated) {
               this.db = parsed;
               this.persist();
               return parsed;
@@ -574,7 +586,9 @@ export class DemoService implements DataService {
         city: v.city ?? 'Rio de Janeiro', state: v.state ?? 'RJ', neighborhood: v.neighborhood ?? '', address: v.address ?? '',
         latitude: v.latitude ?? -22.9068, longitude: v.longitude ?? -43.1729, cover_image: v.cover_image || '/images/dance-floor.jpg',
         gallery: v.gallery ?? [], instagram_url: v.instagram_url ?? null, website_url: v.website_url ?? null,
-        price_range: v.price_range ?? 2, ...normalizePrices(v), music_styles: v.music_styles ?? [], opening_days: v.opening_days ?? [], approved: false,
+        price_range: v.price_range ?? 2, ...normalizePrices(v), music_styles: v.music_styles ?? [], opening_days: v.opening_days ?? [],
+        audience_tags: v.audience_tags ?? [], capacity: v.capacity ?? null, opens_at: v.opens_at || null, closes_at: v.closes_at || null,
+        is_indicated: v.is_indicated ?? false, approved: false,
         is_demo: false, created_at: now(),
       };
       db.venues.push(venue);
@@ -723,6 +737,7 @@ export class DemoService implements DataService {
     resetDemo: async () => {
       localStorage.removeItem(DB_KEY);
       localStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem('classifydj:plus-db'); // assinaturas/preferências Classify+ do modo demo
       this.db = null;
       this.loading = null;
       await this.load();

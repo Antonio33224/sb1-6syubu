@@ -51,6 +51,18 @@ export interface Venue {
   spend_max?: number | null;
   music_styles: string[];
   opening_days: string[];
+  /** Perfil de público informado pelo administrador (ex.: "Universitário"). Vazio = não informado. */
+  audience_tags?: string[];
+  /** Capacidade informada (pessoas). null = não informado — nunca estimado pela interface. */
+  capacity?: number | null;
+  /** Horário de abertura/fechamento informado (HH:MM). null = não informado. */
+  opens_at?: string | null;
+  closes_at?: string | null;
+  /**
+   * Estabelecimento INDICADO pela curadoria Classify. Exibido para todos os
+   * usuários com o rótulo "INDICADO"; não altera notas nem rankings.
+   */
+  is_indicated?: boolean;
   /** Calculado pelo sistema (selo Classify Approved). */
   approved: boolean;
   is_demo: boolean;
@@ -271,6 +283,8 @@ export interface AdminMetrics {
   pending_reports: number;
   popular: { venue: Venue; review_count: number; avg_rating: number }[];
 }
+
+export * from './plus';
 
 export interface ReportWithMeta {
   report: ReviewReport;

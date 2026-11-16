@@ -16,6 +16,7 @@ const COLUMNS: { title: string; links: { href: string; label: string; external?:
   {
     title: 'Classify DJ',
     links: [
+      { href: '/classify-plus', label: 'Classify+ (assinatura)' },
       { href: '/sobre', label: 'Sobre o Classify DJ' },
       { href: '/approved', label: 'Selo Approved' },
       { href: '/editorial', label: 'Editorial' },

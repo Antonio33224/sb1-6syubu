@@ -3,6 +3,7 @@ import '@fontsource-variable/sora';
 import '@fontsource-variable/manrope';
 import '@/styles/globals.css';
 import { AppProviders } from '@/components/providers/AppProviders';
+import { PlusProvider } from '@/components/providers/PlusProvider';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { DemoBadge } from '@/components/layout/DemoBadge';
@@ -20,10 +21,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="pt-BR">
       <body>
         <AppProviders>
-          <Header />
-          <main className="min-h-[60vh]">{children}</main>
-          <Footer />
-          <DemoBadge />
+          <PlusProvider>
+            <Header />
+            <main className="min-h-[60vh]">{children}</main>
+            <Footer />
+            <DemoBadge />
+          </PlusProvider>
         </AppProviders>
       </body>
     </html>

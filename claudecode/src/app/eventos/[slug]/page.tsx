@@ -8,6 +8,7 @@ import { Photo } from '@/components/ui/Photo';
 import { Score, ReviewCount } from '@/components/ui/Score';
 import { Avatar } from '@/components/ui/Avatar';
 import { FavoriteButton, ShareButton } from '@/components/actions/Actions';
+import { FollowArtistButton } from '@/components/plus/FollowArtistButton';
 import { DemoTag, EmptyState, Skeleton } from '@/components/ui/States';
 import { FieldError } from '@/components/ui/Controls';
 import { useAsync } from '@/hooks/useAsync';
@@ -77,7 +78,10 @@ export default function EventPage() {
           <p className="eyebrow mt-10">Line-up</p>
           <ul className="mt-4 divide-y divide-line border-y border-line">
             {event.dj_names.map((dj) => (
-              <li key={dj} className="py-4 font-display text-[20px] font-bold uppercase tracking-tight sm:text-[26px]">{dj}</li>
+              <li key={dj} className="flex items-center justify-between gap-4 py-4">
+                <span className="font-display text-[20px] font-bold uppercase tracking-tight sm:text-[26px]">{dj}</span>
+                <FollowArtistButton name={dj} kind="dj" />
+              </li>
             ))}
           </ul>
           <div className="mt-8 flex flex-wrap gap-2">
