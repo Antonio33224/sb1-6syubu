@@ -112,6 +112,29 @@ Fluxo: `/api/billing/checkout` cria a sessão → usuário paga no Stripe → o 
 - **Banners de terceiros**: espaço `AdSlot` pronto; em produção só aparece com `NEXT_PUBLIC_ADS_ENABLED=true` e nunca para assinantes.
 - **Benefícios**: os demonstrativos são marcados “Exemplo” e não podem ser resgatados no Supabase; cadastre acordos reais no painel.
 
+## Classify AI (Claude — API oficial da Anthropic)
+
+Concierge em `/classify-ai` que conversa com o usuário e recomenda casas e eventos **somente a partir do banco real**. Cada mensagem é uma chamada real à Messages API da Anthropic (SDK oficial `@anthropic-ai/sdk`, streaming); não há respostas fixas nem modo simulado.
+
+**Configuração**
+
+1. Crie uma chave em [platform.claude.com](https://platform.claude.com) e defina `ANTHROPIC_API_KEY` em `.env.local` (local) e em *Project Settings → Environment Variables* na Vercel (Production e Preview). Nunca use `NEXT_PUBLIC_` para ela.
+2. Aplique `supabase/migrations/0004_classify_ai.sql` (cota por usuário, registro de tokens e conversas salvas).
+3. Opcional: `CLASSIFY_AI_MODEL` (padrão `claude-opus-5-5`, centralizado em `src/lib/server/classify-ai/config.ts`), `CLASSIFY_AI_MAX_TOKENS`, `CLASSIFY_AI_MAX_TOOL_ROUNDS`, `CLASSIFY_AI_INCLUDE_DEMO`.
+
+Sem a chave, a rota responde **503** com “ANTHROPIC_API_KEY não foi definida”. Sem o Supabase (modo demonstração), a página explica que a IA fica desativada em vez de inventar dados.
+
+**Como funciona** (`src/lib/server/classify-ai/`)
+
+- `POST /api/classify-ai/chat` exige login (token Supabase), valida a mensagem (≤ 2000 caracteres), reserva a cota no banco (`ai_consume_quota`: 20/hora e 100/dia por padrão, ajustáveis em `platform_settings`) e devolve a resposta em streaming NDJSON.
+- O Claude consulta o banco por **ferramentas somente leitura** (`search_venues`, `search_events`, `get_venue_details`, `get_catalog_overview`, `get_my_preferences`), executadas com o token do próprio usuário — a RLS vale para a IA também. Ela não tem nenhuma ferramenta de escrita: não altera avaliações, notas nem dados administrativos.
+- Preferências do **Meu Ranking** (preset ativo), favoritos e DJs seguidos personalizam a busca.
+- O servidor registra cada registro devolvido ao modelo; os cartões abaixo da resposta são apenas os registros consultados **e citados** — sempre com link para a página real.
+- Controle de custo: histórico reenviado limitado (20 mensagens / 24 mil caracteres), teto de tokens por chamada, no máximo 6 rodadas de consulta por mensagem, esforço `low`, prompt caching e tokens gravados em `ai_usage_events`.
+- Conversas salvas (opcional, padrão ligado) ficam em `ai_conversations`/`ai_messages`, privadas por RLS e apagáveis pelo usuário.
+
+**Teste real:** `npm run ai:smoke` chama a API da Anthropic de verdade: verifica a chave e o modelo, a resposta do Claude, uma conversa de 2 turnos com o banco (contexto mantido, ferramentas chamadas, todo registro citado conferido por id/slug/nome) e, com `CLASSIFY_AI_BASE_URL`, a rota HTTP em streaming (local ou na Vercel). Etapas sem configuração aparecem como **NÃO TESTADO**, nunca como aprovadas.
+
 ## Como o ranking é calculado
 
 `src/lib/ranking.ts` (espelhado em SQL por `ranking_snapshot`/`get_rankings`):
