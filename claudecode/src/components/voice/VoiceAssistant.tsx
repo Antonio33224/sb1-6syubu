@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { clsx } from 'clsx';
 import { AlertCircle, History, Mic, MicOff, PhoneOff, Send, X } from 'lucide-react';
 import { useApp } from '@/components/providers/AppProviders';
+import { usePlus } from '@/components/providers/PlusProvider';
 import { voiceAvailableInThisMode } from '@/services/voice-client';
 import { supportsWebRTC, type VoiceState } from './realtime';
 import { useGeoidScene } from './useGeoidScene';
@@ -32,6 +33,7 @@ const SAFE_CORNER = { bottom: 'calc(24px + env(safe-area-inset-bottom))', right:
 
 export function VoiceAssistant() {
   const { user, authReady } = useApp();
+  const { isPremium, ready: plusReady } = usePlus();
   const pathname = usePathname();
   const v = useVoiceSession();
   const [open, setOpen] = useState(false);
@@ -48,7 +50,9 @@ export function VoiceAssistant() {
   const visual: VoiceState = v.error ? 'error' : v.active ? v.state : 'idle';
   const host = open && view === 'talk' ? panelHost : orbHost;
   const { failed: noWebGL } = useGeoidScene(host, open ? 'full' : 'mini', visual, v.level);
-  const canTalk = Boolean(user) && available;
+  // Exclusivo Classify+ (assinatura ou gratuidade). O servidor confere de novo (403).
+  const canTalk = Boolean(user) && available && isPremium;
+  const needsPlus = Boolean(user) && available && plusReady && !isPremium;
   const { start, stop, active } = v;
 
   const openPanel = useCallback(() => {
@@ -88,6 +92,11 @@ export function VoiceAssistant() {
     if (authReady && !user && active) stop();
   }, [authReady, user, active, stop]);
 
+  // ...e quando o acesso Classify+ termina durante a conversa.
+  useEffect(() => {
+    if (plusReady && !isPremium && active) stop();
+  }, [plusReady, isPremium, active, stop]);
+
   const submitText = (e: FormEvent) => {
     e.preventDefault();
     if (v.sendText(draft)) setDraft('');
@@ -104,7 +113,7 @@ export function VoiceAssistant() {
         <div className="pointer-events-none fixed z-[90] flex flex-col items-end gap-3" style={SAFE_CORNER}>
           {v.active && v.cards.length > 0 && (
             <div className="pointer-events-auto max-h-[50vh] overflow-y-auto">
-              <VoiceCards cards={v.cards.slice(0, 3)} compact />
+              <VoiceCards cards={v.cards.slice(0, 3)} title={v.cardsTitle} compact />
             </div>
           )}
           <button
@@ -159,7 +168,7 @@ export function VoiceAssistant() {
             <div className="flex min-h-0 flex-1 flex-col">
               {v.cards.length > 0 && (
                 <div className="pb-3">
-                  <VoiceCards cards={v.cards} onNavigate={() => window.innerWidth < 640 && closePanel()} />
+                  <VoiceCards cards={v.cards} title={v.cardsTitle} onNavigate={() => window.innerWidth < 640 && closePanel()} />
                 </div>
               )}
 
@@ -178,7 +187,16 @@ export function VoiceAssistant() {
                       Entrar
                     </Link>
                   </div>
-                ) : (
+                ) : needsPlus ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <p className="text-[14px] text-bone/90">O concierge de voz é exclusivo para assinantes <span className="text-blue">Classify+</span>.</p>
+                    <p className="text-[12px] text-mute">Assine ou resgate um cupom para conversar por voz com o Classify DJ.</p>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <Link href="/classify-plus" onClick={closePanel} className="btn-primary btn-sm">Conhecer o Classify+</Link>
+                      <Link href="/assinatura#cupom" onClick={closePanel} className="btn-outline btn-sm">Tenho um cupom</Link>
+                    </div>
+                  </div>
+                ) : !plusReady ? null : (
                   <>
                     {lastUser && <p className="text-[13px] text-mute">“{lastUser.text}”</p>}
                     {lastAssistant && <p className="mt-2 text-[15px] leading-relaxed text-bone">{lastAssistant.text}</p>}

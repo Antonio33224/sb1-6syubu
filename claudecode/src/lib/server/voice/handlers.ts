@@ -12,6 +12,8 @@ import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { VoiceSessionResponse } from '@/lib/voice/shared';
 import { missingConfigMessage, nowContext, VOICE_LIMITS, voiceConfig, voiceInstructions, type VoiceConfig, type VoiceConfigResult } from './config';
+import { checkPremium } from '../auth';
+import { log } from '../log-sanitize';
 import { ClassifyData, DataError, userClient } from './data';
 import { executeVoiceTool, ToolInputError, VOICE_TOOLS, type VoiceDataSource } from './tools';
 
@@ -26,6 +28,8 @@ export interface VoiceDeps {
   config: () => VoiceConfigResult;
   /** Resolve o usuário a partir do token Supabase; null = não autenticado. */
   authenticate: (req: Request, config: VoiceConfig) => Promise<AuthContext | null>;
+  /** Acesso Classify+ vigente (assinatura OU gratuidade). A IA é exclusiva para assinantes. */
+  hasPremium: (ctx: AuthContext) => Promise<boolean>;
   fetch: typeof fetch;
   dataFor: (ctx: AuthContext, config: VoiceConfig, today: string) => VoiceDataSource;
   now: () => Date;
@@ -46,6 +50,7 @@ export async function supabaseAuthenticate(req: Request, config: VoiceConfig): P
 export const defaultDeps: VoiceDeps = {
   config: () => voiceConfig(),
   authenticate: supabaseAuthenticate,
+  hasPremium: checkPremium,
   fetch: (...args) => fetch(...args),
   dataFor: (ctx, config, today) => new ClassifyData(ctx.db, ctx.userId, config.includeDemo, today),
   now: () => new Date(),
@@ -56,13 +61,24 @@ type Guard = { error: Response } | { error?: undefined; config: VoiceConfig; aut
 async function guard(req: Request, deps: VoiceDeps): Promise<Guard> {
   const cfg = deps.config();
   if (!cfg.ok) {
-    console.error('[voice] configuração ausente:', cfg.missing.join(', '));
+    log.error('[voice] configuração ausente:', cfg.missing.join(', '));
     return { error: json(503, { error: missingConfigMessage(cfg.missing), code: 'not_configured' }) };
   }
   const auth = await deps.authenticate(req, cfg.config);
   if (!auth) return { error: json(401, { error: 'Entre na sua conta para falar com o concierge.', code: 'unauthenticated' }) };
+  // Paywall no servidor (o banco confere de novo em voice_start_session / voice_register_tool_call).
+  let premium: boolean;
+  try {
+    premium = await deps.hasPremium(auth);
+  } catch (err) {
+    log.error('[voice] verificação de assinatura', err);
+    return { error: json(503, { error: 'Não foi possível verificar sua assinatura agora.', code: 'access_unavailable' }) };
+  }
+  if (!premium) return { error: json(403, { error: SUBSCRIPTION_REQUIRED, code: 'subscription_required' }) };
   return { config: cfg.config, auth };
 }
+
+const SUBSCRIPTION_REQUIRED = 'O concierge de voz é exclusivo para assinantes Classify+.';
 
 // ------------------------------------------------------------------ sessão
 
@@ -111,10 +127,11 @@ export function createSessionHandlers(deps: VoiceDeps = defaultDeps) {
 
     const start = await auth.db.rpc('voice_start_session', { p_model: config.model });
     if (start.error) {
-      console.error('[voice] rate limit', start.error.message);
+      log.error('[voice] rate limit', start.error.message);
       return json(503, { error: 'Controle de uso indisponível. Aplique a migração supabase/migrations/0005_voice_assistant.sql.', code: 'quota_unavailable' });
     }
     const s = start.data as StartSessionResult;
+    if (s.reason === 'subscription_required') return json(403, { error: SUBSCRIPTION_REQUIRED, code: 'subscription_required' });
     if (!s.allowed || !s.session_id) {
       const error =
         s.reason === 'hourly'
@@ -136,7 +153,7 @@ export function createSessionHandlers(deps: VoiceDeps = defaultDeps) {
         cache: 'no-store',
       });
     } catch (err) {
-      console.error('[voice] openai fetch', err instanceof Error ? err.message : err);
+      log.error('[voice] openai fetch', err instanceof Error ? err.message : err);
       await auth.db.rpc('voice_end_session', { p_session: s.session_id, p_status: 'failed' });
       return json(502, { error: 'Não foi possível conectar ao serviço de voz.', code: 'upstream' });
     }
@@ -144,7 +161,7 @@ export function createSessionHandlers(deps: VoiceDeps = defaultDeps) {
     const body = (await res.json().catch(() => null)) as { value?: unknown; expires_at?: unknown; error?: { code?: string; type?: string } } | null;
     if (!res.ok || typeof body?.value !== 'string') {
       // Nunca repassamos o corpo de erro da OpenAI ao cliente (nem logamos a mensagem, que pode citar a chave).
-      console.error('[voice] openai client_secrets', res.status, body?.error?.code ?? body?.error?.type ?? '');
+      log.error('[voice] openai client_secrets', res.status, body?.error?.code ?? body?.error?.type ?? '');
       await auth.db.rpc('voice_end_session', { p_session: s.session_id, p_status: 'failed' });
       const code = res.status === 401 ? 'not_configured' : res.status === 429 ? 'upstream_busy' : 'upstream';
       const error = res.status === 429 ? 'O serviço de voz está ocupado. Tente em instantes.' : 'O serviço de voz está indisponível no momento.';
@@ -187,6 +204,7 @@ const TOOL_DENIED: Record<string, [number, string]> = {
   ended: [410, 'A sessão de voz foi encerrada.'],
   expired: [410, 'A sessão de voz expirou.'],
   tool_limit: [429, 'Limite de consultas desta sessão atingido.'],
+  subscription_required: [403, 'O concierge de voz é exclusivo para assinantes Classify+.'],
   unauthenticated: [401, 'Entre na sua conta para falar com o concierge.'],
 };
 
@@ -210,7 +228,7 @@ export function createToolHandler(deps: VoiceDeps = defaultDeps) {
     // A sessão precisa ser do usuário, estar ativa e dentro do limite de duração/consultas.
     const reg = await auth.db.rpc('voice_register_tool_call', { p_session: session_id });
     if (reg.error) {
-      console.error('[voice] register tool', reg.error.message);
+      log.error('[voice] register tool', reg.error.message);
       return json(503, { error: 'Controle de uso indisponível.', code: 'quota_unavailable' });
     }
     const r = reg.data as { allowed: boolean; reason?: string };
@@ -228,7 +246,7 @@ export function createToolHandler(deps: VoiceDeps = defaultDeps) {
         // Devolvido ao modelo para que ele corrija os argumentos.
         return json(422, { error: err.message, code: 'invalid_arguments', output: { erro: err.message, detalhes: err.issues } });
       }
-      console.error('[voice] tool', name, err instanceof Error ? err.message : err);
+      log.error('[voice] tool', name, err instanceof Error ? err.message : err);
       const msg = err instanceof DataError ? 'Falha ao consultar o banco do Classify DJ.' : 'Erro ao executar a consulta.';
       return json(500, { error: msg, code: 'tool_failed', output: { erro: msg } });
     }
@@ -238,10 +256,11 @@ export function createToolHandler(deps: VoiceDeps = defaultDeps) {
 // ------------------------------------------------------------------ transcrições (opt-in)
 
 const cardSchema = z.object({
-  tipo: z.enum(['casa', 'evento']),
+  tipo: z.enum(['casa', 'evento', 'dj']),
   id: z.string().max(120),
   nome: z.string().max(200),
-  url: z.string().regex(/^\/(boates|eventos)\/[a-z0-9-]+$/),
+  // Só links internos conhecidos (nada de javascript:, //host ou URLs externas).
+  url: z.string().max(400).regex(/^\/(boates|eventos)\/[a-z0-9-]+$|^\/eventos\?dj=[A-Za-z0-9%._~-]{1,360}$/),
   subtitulo: z.string().max(200).nullable(),
   nota: z.number().nullable(),
   num_reviews: z.number().nullable(),

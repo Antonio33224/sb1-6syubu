@@ -57,11 +57,16 @@ function setup() {
 /** Coleta todos os valores de "nome" de um objeto (profundo). */
 function names(o: unknown, out: string[] = []): string[] {
   if (Array.isArray(o)) o.forEach((x) => names(x, out));
-  else if (o && typeof o === 'object') for (const [k, v] of Object.entries(o)) (k === 'nome' && typeof v === 'string' ? out.push(v) : names(v, out));
+  else if (o && typeof o === 'object')
+    for (const [k, v] of Object.entries(o)) {
+      if (k === 'nome' && typeof v === 'string') out.push(v);
+      else names(v, out);
+    }
   return out;
 }
 
-const DB_NAMES = new Set([...VENUES.map((v) => v.name), ...EVENTS.map((e) => e.name)]);
+// Nomes que existem no banco: casas, eventos e DJs dos line-ups.
+const DB_NAMES = new Set([...VENUES.map((v) => v.name), ...EVENTS.map((e) => e.name), ...EVENTS.flatMap((e) => e.dj_names)]);
 
 // ------------------------------------------------------------------ definições
 
@@ -207,6 +212,70 @@ test('nenhuma tool escreve no banco', async () => {
   await executeVoiceTool('top_reviews', { casa_id: 'lux' }, data);
   await executeVoiceTool('djs_seguidos_pelo_usuario', {}, data);
   await executeVoiceTool('eventos_de_djs_seguidos', {}, data);
+  assert.deepEqual(writes(), []);
+});
+
+// ------------------------------------------------------------------ mostrar_opcoes
+
+test('mostrar_opcoes: exibe só casas do banco e descarta ids inválidos/inexistentes/demo', async () => {
+  const { data } = setup();
+  const r = await executeVoiceTool(
+    'mostrar_opcoes',
+    { tipo: 'casa', ids: ['caro', 'nao-existe', "lux'; drop table venues;--", 'LUX', 'lux', 'demo-club', 'caro'], titulo: 'Techno em SP' },
+    data,
+  );
+  // Ordem pedida, sem duplicados; demo fica de fora (VOICE_INCLUDE_DEMO desligado).
+  assert.deepEqual(r.cards.map((c) => c.id), ['caro', 'lux']);
+  assert.deepEqual(r.cards.map((c) => c.url), ['/boates/caro', '/boates/lux']);
+  assert.equal(r.cards[0].nota, 9.5); // nota real do banco
+  assert.deepEqual(r.display, { titulo: 'Techno em SP' });
+  const out = r.output as { exibidos: { id: string; nome: string }[]; descartados: string[] };
+  assert.deepEqual(out.exibidos.map((x) => x.nome), ['Caro Club', 'Lux Club']);
+  assert.deepEqual(out.descartados.sort(), ['LUX', 'demo-club', "lux'; drop table venues;--", 'nao-existe'].sort());
+  for (const n of names(r.output)) assert.ok(DB_NAMES.has(n), `nome fora do banco: ${n}`);
+});
+
+test('mostrar_opcoes: eventos passados são descartados', async () => {
+  const { data } = setup();
+  const r = await executeVoiceTool('mostrar_opcoes', { tipo: 'evento', ids: ['passado', 'noite-anna', 'inventado'] }, data);
+  assert.deepEqual(r.cards.map((c) => c.id), ['noite-anna']);
+  assert.deepEqual((r.output as { descartados: string[] }).descartados, ['passado', 'inventado']);
+  assert.deepEqual(r.display, { titulo: null });
+});
+
+test('mostrar_opcoes: DJs só se existirem em line-ups futuros ou nos seguidos', async () => {
+  const { data } = setup();
+  // dj_id vem das buscas (nome normalizado): "JOSÉ  Pérez" → "jose-perez".
+  const ev = await executeVoiceTool('buscar_eventos', { cidade: 'Rio de Janeiro' }, data);
+  const djId = (ev.output as { resultados: { djs: { dj_id: string }[] }[] }).resultados[0].djs[0].dj_id;
+  assert.equal(djId, 'jose-perez');
+  const r = await executeVoiceTool('mostrar_opcoes', { tipo: 'dj', ids: [djId, 'anna-silva', 'dj-inventado'] }, data);
+  assert.deepEqual(r.cards.map((c) => c.id), ['jose-perez', 'anna-silva']);
+  assert.equal(r.cards[0].tipo, 'dj');
+  assert.match(r.cards[0].url, /^\/eventos\?dj=/);
+  assert.equal(r.cards[1].data, '2026-11-21'); // próximo evento real (o passado não conta)
+  assert.deepEqual((r.output as { descartados: string[] }).descartados, ['dj-inventado']);
+});
+
+test('mostrar_opcoes: nada válido → nenhum cartão e aviso ao modelo', async () => {
+  const { data, calls } = setup();
+  const r = await executeVoiceTool('mostrar_opcoes', { tipo: 'casa', ids: ['../admin', 'X Y'] }, data);
+  assert.deepEqual(r.cards, []);
+  assert.match(String((r.output as { mensagem: string }).mensagem), /Nenhum id/);
+  assert.ok(!calls.some((c) => c.table === 'venues'), 'ids malformados não chegam ao banco');
+});
+
+test('mostrar_opcoes: valida tipo e tamanho da lista', () => {
+  assert.throws(() => parseToolArgs('mostrar_opcoes', { tipo: 'usuario', ids: ['x'] }), ToolInputError);
+  assert.throws(() => parseToolArgs('mostrar_opcoes', { tipo: 'casa', ids: [] }), ToolInputError);
+  assert.throws(() => parseToolArgs('mostrar_opcoes', { tipo: 'casa', ids: Array.from({ length: 50 }, (_, i) => `c${i}`) }), ToolInputError);
+});
+
+test('mostrar_opcoes não escreve no banco', async () => {
+  const { data, writes } = setup();
+  await executeVoiceTool('mostrar_opcoes', { tipo: 'casa', ids: ['lux'] }, data);
+  await executeVoiceTool('mostrar_opcoes', { tipo: 'evento', ids: ['noite-anna'] }, data);
+  await executeVoiceTool('mostrar_opcoes', { tipo: 'dj', ids: ['anna-silva'] }, data);
   assert.deepEqual(writes(), []);
 });
 

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { StripeError } from '@/lib/server/stripe';
 import { billingConfig, HttpError, type BillingConfig } from '@/lib/server/billing';
+import { log } from '@/lib/server/log-sanitize';
 
 /** Executa um handler de cobrança com configuração validada e erros traduzidos. */
 export async function handle(fn: (c: BillingConfig) => Promise<unknown>) {
@@ -13,10 +14,10 @@ export async function handle(fn: (c: BillingConfig) => Promise<unknown>) {
   } catch (err) {
     if (err instanceof HttpError) return NextResponse.json({ error: err.message }, { status: err.status });
     if (err instanceof StripeError) {
-      console.error('[billing] stripe', err.status, err.code, err.message);
+      log.error('[billing] stripe', err.status, err.code, err.message);
       return NextResponse.json({ error: 'O gateway de pagamento recusou a operação. Tente novamente.' }, { status: 502 });
     }
-    console.error('[billing]', err);
+    log.error('[billing]', err);
     return NextResponse.json({ error: 'Erro inesperado na cobrança.' }, { status: 500 });
   }
 }

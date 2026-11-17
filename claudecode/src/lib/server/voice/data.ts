@@ -342,6 +342,77 @@ export class ClassifyData {
     return (data ?? []).map((a) => ({ name: String((a as Row).name), kind: String((a as Row).kind) }));
   }
 
+  // ---------------------------------------------------------------- mostrar_opcoes (por id)
+
+  /** Casas pelos slugs, na ordem pedida. Slugs inexistentes simplesmente não voltam. */
+  async venuesBySlugs(slugs: string[]): Promise<{ venue: VenueRecord; stats: VenueStatsRecord }[]> {
+    if (!slugs.length) return [];
+    const { data, error } = await this.db.from('venues').select('*').in('is_demo', this.demoValues).in('slug', slugs).limit(slugs.length);
+    check(error, 'estabelecimentos');
+    const venues = (data ?? []).map((r) => mapVenue(r as Row));
+    if (!venues.length) return [];
+    const { data: stats, error: e2 } = await this.db.from('venue_stats').select('venue_id, review_count, avg_rating, score').in('venue_id', venues.map((v) => v.id)).limit(venues.length);
+    check(e2, 'notas');
+    const byId = new Map((stats ?? []).map((s) => [String((s as Row).venue_id), s as Row]));
+    const bySlug = new Map(venues.map((v) => [v.slug, v]));
+    return slugs.flatMap((s) => {
+      const v = bySlug.get(s);
+      return v ? [{ venue: v, stats: mapStats(byId.get(v.id)) }] : [];
+    });
+  }
+
+  /** Eventos FUTUROS pelos slugs, na ordem pedida (passados são descartados). */
+  async eventsBySlugs(slugs: string[]): Promise<EventRecord[]> {
+    if (!slugs.length) return [];
+    const { data, error } = await this.db
+      .from('events')
+      .select('*, venue:venues(*)')
+      .in('is_demo', this.demoValues)
+      .in('slug', slugs)
+      .gte('event_date', this.today)
+      .limit(slugs.length);
+    check(error, 'eventos');
+    const bySlug = new Map(
+      (data ?? [])
+        .map((r) => mapEvent(r as Row))
+        .filter((e) => this.includeDemo || !e.venue?.is_demo)
+        .map((e) => [e.slug, e]),
+    );
+    return slugs.flatMap((s) => (bySlug.has(s) ? [bySlug.get(s)!] : []));
+  }
+
+  /**
+   * DJs pelos ids (nome normalizado). Um DJ "existe" se está no line-up de algum
+   * evento futuro do banco ou entre os seguidos pelo usuário da sessão.
+   */
+  async djsByKeys(keys: string[], keyOf: (name: string) => string): Promise<{ key: string; name: string; upcoming: number; next_date: string | null; followed: boolean }[]> {
+    if (!keys.length) return [];
+    const wanted = new Set(keys);
+    const [{ data: events, error }, followed] = await Promise.all([
+      this.db.from('events').select('event_date, dj_names, is_demo').in('is_demo', this.demoValues).gte('event_date', this.today).order('event_date').limit(MAX_SCAN_ROWS.events),
+      this.followedArtists(),
+    ]);
+    check(error, 'eventos');
+    const found = new Map<string, { key: string; name: string; upcoming: number; next_date: string | null; followed: boolean }>();
+    for (const e of events ?? []) {
+      for (const name of strArr((e as Row).dj_names)) {
+        const key = keyOf(name);
+        if (!wanted.has(key)) continue;
+        const cur = found.get(key) ?? { key, name, upcoming: 0, next_date: null, followed: false };
+        cur.upcoming += 1;
+        const d = String((e as Row).event_date);
+        if (!cur.next_date || d < cur.next_date) cur.next_date = d;
+        found.set(key, cur);
+      }
+    }
+    for (const a of followed) {
+      const key = keyOf(a.name);
+      if (!wanted.has(key)) continue;
+      found.set(key, { ...(found.get(key) ?? { key, name: a.name, upcoming: 0, next_date: null }), followed: true });
+    }
+    return keys.flatMap((k) => (found.has(k) ? [found.get(k)!] : []));
+  }
+
   async eventsOfFollowedArtists(q: { date_from?: string; date_to?: string; limit: number }) {
     const artists = await this.followedArtists();
     if (!artists.length) return { artists, total: 0, items: [] as EventRecord[], date_from: q.date_from ?? this.today, date_to: q.date_to ?? null };

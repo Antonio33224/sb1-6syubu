@@ -75,11 +75,30 @@ export interface AccessState {
     | 'Cancelada'
     | 'Expirada'
     | 'Pagamento recusado'
-    | 'Aguardando confirmação';
+    | 'Aguardando confirmação'
+    | 'Gratuidade';
   subscription: Subscription | null;
-  /** Fim do acesso (fim do teste/período). */
+  /** Fim do acesso (fim do teste/período ou da gratuidade). */
   accessUntil: string | null;
   trialEligible: boolean;
+  /** De onde vem o acesso premium (ausente = sem acesso). */
+  source?: 'subscription' | 'grant';
+}
+
+/**
+ * Gratuidade de Classify+ (cupom ou concessão do admin) — migration 0006.
+ * Libera o Classify+ completo enquanto vigente; não gera cobrança.
+ */
+export interface PremiumGrant {
+  id: string;
+  user_id: string;
+  source: 'coupon' | 'admin';
+  coupon_id: string | null;
+  starts_at: string;
+  ends_at: string;
+  reason: string;
+  revoked_at: string | null;
+  created_at: string;
 }
 
 export type PlusFeature =

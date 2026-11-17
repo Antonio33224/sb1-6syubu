@@ -29,6 +29,7 @@ import type {
 } from '@/types';
 import { ServiceError, type DataService, type ImageBucket } from './data-service';
 import { sortReviews } from '@/lib/reviews';
+import { reportLoginFailure } from './login-guard';
 
 const num = (v: unknown) => (v === null || v === undefined ? 0 : Number(v));
 
@@ -146,6 +147,11 @@ export class SupabaseService implements DataService {
 
   async signIn(email: string, password: string) {
     const { error } = await this.sb.auth.signInWithPassword({ email: email.trim(), password });
+    if (error && /invalid login credentials|invalid_credentials/i.test(`${error.message} ${(error as { code?: string }).code ?? ''}`)) {
+      // Registra a falha no servidor (alerta por e-mail ao admin ao passar do limite).
+      const r = await reportLoginFailure(email.trim().toLowerCase());
+      if (r.too_many) throw new ServiceError(`Muitas tentativas sem sucesso. Aguarde ${r.retry_after_minutes ?? 15} minutos ou redefina sua senha.`);
+    }
     fail(error);
     const p = await this.getCurrentUser();
     if (!p) throw new ServiceError('Perfil não encontrado.');

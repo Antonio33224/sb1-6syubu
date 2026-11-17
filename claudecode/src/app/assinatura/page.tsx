@@ -6,6 +6,7 @@ import { AlertTriangle, CreditCard, ExternalLink, Loader2 } from 'lucide-react';
 import { useApp, useToast } from '@/components/providers/AppProviders';
 import { usePlus } from '@/components/providers/PlusProvider';
 import { PlanCards } from '@/components/plus/PlanCards';
+import { CouponRedeem } from '@/components/plus/CouponRedeem';
 import { PlusBadge } from '@/components/plus/PlusBadge';
 import { Modal } from '@/components/ui/Controls';
 import { Skeleton } from '@/components/ui/States';
@@ -60,7 +61,10 @@ function MySubscription() {
   if (!authReady || !user || !ready) return <div className="container-site py-16"><Skeleton className="h-80" /></div>;
 
   const sub = access.subscription;
-  const plan = sub ? PLANS[sub.plan_id] : null;
+  const viaGrant = access.source === 'grant';
+  // Cancelar/reativar só valem para uma assinatura paga vigente (não para gratuidade).
+  const paidActive = access.source === 'subscription';
+  const plan = sub && !viaGrant ? PLANS[sub.plan_id] : null;
 
   const run = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true);
@@ -118,16 +122,17 @@ function MySubscription() {
         <div className="plus-frame p-7 sm:p-9">
           <div className="grid gap-6 sm:grid-cols-2">
             <Info label="Status" value={access.label} highlight={isPremium} />
-            <Info label="Plano" value={plan ? `${plan.name} · ${formatCents(plan.price_cents)}/${plan.interval === 'month' ? 'mês' : 'ano'}` : 'Gratuito'} />
-            {sub?.status === 'trialing' && sub.trial_end && <Info label="Teste grátis até" value={formatDate(sub.trial_end)} />}
-            {sub && isPremium && (
+            <Info label="Plano" value={viaGrant ? 'Classify+ (gratuidade)' : plan ? `${plan.name} · ${formatCents(plan.price_cents)}/${plan.interval === 'month' ? 'mês' : 'ano'}` : 'Gratuito'} />
+            {viaGrant && <Info label="Acesso até" value={formatDate(access.accessUntil)} />}
+            {!viaGrant && sub?.status === 'trialing' && sub.trial_end && <Info label="Teste grátis até" value={formatDate(sub.trial_end)} />}
+            {sub && paidActive && (
               <Info
                 label={sub.cancel_at_period_end || sub.status === 'canceled' ? 'Acesso até' : sub.status === 'trialing' ? 'Primeira cobrança' : 'Próxima renovação'}
                 value={formatDate(access.accessUntil)}
               />
             )}
-            {sub && !isPremium && sub.current_period_end && <Info label="Encerrada em" value={formatDate(sub.ended_at ?? sub.current_period_end)} />}
-            <Info label="Cobrança" value={sub ? (sub.provider === 'demo' ? 'Demonstração — sem cobrança' : sub.provider === 'stripe' ? 'Cartão via Stripe' : sub.provider) : '—'} />
+            {sub && !paidActive && !viaGrant && sub.current_period_end && <Info label="Encerrada em" value={formatDate(sub.ended_at ?? sub.current_period_end)} />}
+            <Info label="Cobrança" value={viaGrant ? 'Sem cobrança (cupom ou cortesia)' : sub ?(sub.provider === 'demo' ? 'Demonstração — sem cobrança' : sub.provider === 'stripe' ? 'Cartão via Stripe' : sub.provider) : '—'} />
           </div>
 
           {sub?.status === 'past_due' && (
@@ -140,10 +145,10 @@ function MySubscription() {
           )}
 
           <div className="mt-8 flex flex-wrap gap-3 border-t border-line pt-6">
-            {isPremium && sub?.status !== 'canceled' && (
+            {paidActive && sub?.status !== 'canceled' && (
               <button onClick={() => setConfirmCancel(true)} disabled={busy} className="btn-ghost btn-sm">Cancelar assinatura</button>
             )}
-            {isPremium && sub?.status === 'canceled' && (
+            {paidActive && sub?.status === 'canceled' && (
               <button onClick={() => run(() => plus.resumeSubscription(), 'Renovação reativada.')} disabled={busy} className="btn-primary btn-sm">Manter assinatura</button>
             )}
             {sub?.provider === 'stripe' && (
@@ -179,6 +184,10 @@ function MySubscription() {
           )}
           <p className="mt-6 text-[11px] text-mute">Nenhum dado de cartão é armazenado pelo Classify DJ.</p>
         </div>
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+        <CouponRedeem />
       </div>
 
       {!isPremium && (

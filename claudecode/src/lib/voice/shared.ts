@@ -3,14 +3,16 @@
  * (sem dependências de servidor).
  */
 
+export type VoiceCardKind = 'casa' | 'evento' | 'dj';
+
 /** Cartão clicável exibido acima do orbe, sempre vindo de um registro do banco. */
 export interface VoiceCard {
-  tipo: 'casa' | 'evento';
-  /** slug do registro */
+  tipo: VoiceCardKind;
+  /** slug do registro (casa/evento) ou dj_id (nome normalizado) */
   id: string;
   nome: string;
   url: string;
-  /** cidade (casa) ou nome da casa (evento) */
+  /** cidade (casa), nome da casa (evento) ou "N próximos eventos" (DJ) */
   subtitulo: string | null;
   nota: number | null;
   num_reviews: number | null;
@@ -25,7 +27,29 @@ export interface VoiceToolResponse {
   /** JSON devolvido ao modelo como function_call_output. */
   output: Record<string, unknown>;
   cards: VoiceCard[];
+  /**
+   * Presente só em `mostrar_opcoes`: os cartões devem aparecer NA HORA na tela
+   * (substituindo os anteriores), sincronizados com a fala da IA.
+   */
+  display?: { titulo: string | null };
 }
+
+/**
+ * Identificador estável de DJ/artista: nome sem acentos, minúsculo, com hífens.
+ * "JOSÉ  Pérez" → "jose-perez". Não existe tabela de DJs: o id vem dos line-ups.
+ */
+export function djKey(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120);
+}
+
+/** Página da agenda filtrada pelo DJ. */
+export const djUrl = (name: string) => `/eventos?dj=${encodeURIComponent(name.slice(0, 120)).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`;
 
 export interface VoiceSessionResponse {
   client_secret: string;

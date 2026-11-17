@@ -216,8 +216,10 @@ function RankingDemo() {
     return { venues, stats };
   }, [data, version]);
   const [w, setW] = useState({ music: 100, drinks: 50, organization: 30 });
-  const weights: CriteriaWeights = { music_rating: w.music, crowd_rating: 50, atmosphere_rating: 50, drinks_rating: w.drinks, service_rating: 50, organization_rating: w.organization, experience_rating: 50 };
-  const rows = useMemo(() => (base ? rankByPreferences(base.venues, base.stats, weights, { minReviews: 5, limit: 4 }) : []), [base, weights]); // eslint-disable-line react-hooks/exhaustive-deps
+  const rows = useMemo(() => {
+    const weights: CriteriaWeights = { music_rating: w.music, crowd_rating: 50, atmosphere_rating: 50, drinks_rating: w.drinks, service_rating: 50, organization_rating: w.organization, experience_rating: 50 };
+    return base ? rankByPreferences(base.venues, base.stats, weights, { minReviews: 5, limit: 4 }) : [];
+  }, [base, w]);
 
   const sliders: { k: keyof typeof w; label: string }[] = [
     { k: 'music', label: CRITERIA[0].label },

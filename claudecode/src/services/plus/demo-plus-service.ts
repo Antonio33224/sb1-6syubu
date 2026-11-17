@@ -24,6 +24,7 @@ import type {
   Subscription,
   SubscriptionPayment,
   UserPreferences,
+  PremiumGrant,
 } from '@/types';
 import { ServiceError, type DataService } from '../data-service';
 import type { BillingStatus, CheckoutResult, PlusService } from './plus-service';
@@ -129,6 +130,11 @@ export class DemoPlusService implements PlusService {
   // ------------------------------------------------------------ assinatura
   async billingStatus(): Promise<BillingStatus> {
     return { configured: true, provider: 'demo', message: 'Modo demonstração: nenhuma cobrança é realizada e nenhum dado de pagamento é solicitado.' };
+  }
+
+  /** Cupons e gratuidades existem só com o Supabase (modo demo: nenhuma). */
+  async listMyGrants(): Promise<PremiumGrant[]> {
+    return [];
   }
 
   async listMySubscriptions() {

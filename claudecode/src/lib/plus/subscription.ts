@@ -3,7 +3,8 @@
  * Funções puras: a mesma regra é espelhada no Postgres por `public.has_premium()`
  * (supabase/migrations/0003_classify_plus.sql).
  */
-import type { AccessState, PlanId, PlusFeature, Subscription, SubscriptionPlan, SubscriptionStatus } from '@/types';
+import type { AccessState, PlanId, PlusFeature, PremiumGrant, Subscription, SubscriptionPlan, SubscriptionStatus } from '@/types';
+import { grantAccessUntil } from '@/lib/coupons';
 
 export const PLANS: Record<PlanId, SubscriptionPlan> = {
   monthly: { id: 'monthly', name: 'Classify+ Mensal', price_cents: 1290, currency: 'BRL', interval: 'month', trial_days: 7, active: true },
@@ -51,10 +52,16 @@ export function isTrialEligible(subs: Subscription[]): boolean {
   return !subs.some((s) => s.trial_start !== null);
 }
 
-/** Converte o estado bruto em algo que a interface entende. */
-export function resolveAccess(subs: Subscription[], now = Date.now()): AccessState {
+/**
+ * Converte o estado bruto em algo que a interface entende.
+ * Acesso premium = assinatura vigente OU gratuidade ativa (espelha public._has_premium()).
+ */
+export function resolveAccess(subs: Subscription[], now = Date.now(), grants: PremiumGrant[] = []): AccessState {
   const sub = currentSubscription(subs, now);
   const trialEligible = isTrialEligible(subs);
+  const subPremium = !!sub && hasPremiumAccess(sub, now);
+  const grantUntil = subPremium ? null : grantAccessUntil(grants, now);
+  if (grantUntil) return { tier: 'premium', label: 'Gratuidade', subscription: sub, accessUntil: grantUntil, trialEligible, source: 'grant' };
   if (!sub) return { tier: 'free', label: 'Gratuito', subscription: null, accessUntil: null, trialEligible };
 
   const premium = hasPremiumAccess(sub, now);
@@ -78,7 +85,7 @@ export function resolveAccess(subs: Subscription[], now = Date.now()): AccessSta
               ? 'Aguardando confirmação'
               : 'Expirada';
 
-  return { tier: premium ? 'premium' : 'free', label, subscription: sub, accessUntil, trialEligible };
+  return { tier: premium ? 'premium' : 'free', label, subscription: sub, accessUntil, trialEligible, ...(premium ? { source: 'subscription' as const } : {}) };
 }
 
 export const PLUS_FEATURES: Record<PlusFeature, { label: string; href: string }> = {

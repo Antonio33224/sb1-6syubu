@@ -37,7 +37,7 @@ Contas de teste no modo demo (senha `classify123`):
 ## Configurar o Supabase
 
 1. Crie um projeto em [supabase.com](https://supabase.com).
-2. No **SQL Editor**, execute `supabase/migrations/0001_classify_schema.sql` (tabelas, índices, constraints, triggers, RLS, RPCs, buckets do Storage), depois `supabase/migrations/0002_venue_prices.sql` (média e faixas de preço por casa; campos opcionais — `NULL` = não informado), `supabase/migrations/0003_classify_plus.sql` (Classify+: assinaturas, preferências, alertas, benefícios, histórico, RLS), `0004_classify_ai.sql` e `0005_voice_assistant.sql` (concierge de voz).
+2. No **SQL Editor**, execute `supabase/migrations/0001_classify_schema.sql` (tabelas, índices, constraints, triggers, RLS, RPCs, buckets do Storage), depois `supabase/migrations/0002_venue_prices.sql` (média e faixas de preço por casa; campos opcionais — `NULL` = não informado), `supabase/migrations/0003_classify_plus.sql` (Classify+: assinaturas, preferências, alertas, benefícios, histórico, RLS), `0004_classify_ai.sql`, `0005_voice_assistant.sql` (concierge de voz) e `0006_coupons_grants_audit.sql` (cupons, gratuidades, audit log, alertas de login; a voz passa a exigir Classify+).
 3. (Opcional) Execute `supabase/seed.sql` para carregar os dados demonstrativos — rode `npm run db:seed-sql` antes para gerar datas relativas a hoje.
 4. Copie `.env.example` para `.env.local` e preencha:
 
@@ -48,9 +48,9 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
 5. Em **Authentication → URL Configuration**, adicione `http://localhost:3000/redefinir-senha` e `http://localhost:3000/perfil` (e os equivalentes de produção) às Redirect URLs.
-6. Para tornar alguém administrador: `update public.profiles set role = 'admin' where username = 'seu.usuario';`
+6. Para tornar alguém administrador: rode `scripts/promote-admin.sql` no SQL Editor (troque o e-mail), saia e entre de novo e acesse `/admin` (menu do avatar → **Painel admin**).
 
-A **service_role key nunca é usada** pelo app. Somente a anon key (protegida por RLS) vai para o navegador.
+A **service_role key nunca vai para o navegador**: ela é usada só no servidor (webhook/cobrança e registro de falhas de login). Somente a anon key (protegida por RLS) vai para o navegador. Veja `SECURITY_AUDIT.md`.
 
 ### Remover dados demonstrativos
 
@@ -86,6 +86,9 @@ A **service_role key nunca é usada** pelo app. Somente a anon key (protegida po
 | `/beneficios` | Benefícios em casas parceiras, resgate com código (um por assinante) |
 | `/assinatura` | Plano, status, renovação, pagamentos, cancelar/retomar, portal de cobrança |
 | `/admin` → Classify+ / Benefícios | Métricas (estimado ≠ recebido) e CRUD de benefícios |
+| `/admin` → Cupons / Gratuidades | Cupons de N dias de Classify+ (limite total, por usuário, validade) e gratuidades concedidas/revogadas pelo admin |
+| `/admin` → Segurança / Auditoria | E-mail do admin padrão para alertas de login falho (SMTP) e audit log imutável |
+| `/assinatura` → Tenho um cupom | Resgate de cupom (gratuidade soma com as anteriores) |
 
 **Planos:** mensal R$ 12,90 (7 dias grátis, uma vez por conta) · anual R$ 109,00 (≈ R$ 9,08/mês, ~30% de economia). Premissa interna (somente no admin): mix 70/30 → ticket ponderado ≈ R$ 11,75.
 

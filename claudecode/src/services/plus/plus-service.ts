@@ -8,6 +8,7 @@ import type {
   PlusAdminMetrics,
   PlusNotification,
   PremiumBenefit,
+  PremiumGrant,
   Subscription,
   SubscriptionPayment,
   UserPreferences,
@@ -39,6 +40,8 @@ export interface PlusService {
   // ---- assinatura
   billingStatus(): Promise<BillingStatus>;
   listMySubscriptions(): Promise<Subscription[]>;
+  /** Gratuidades (cupom/admin) vigentes ou futuras do usuário logado. */
+  listMyGrants(): Promise<PremiumGrant[]>;
   listMyPayments(): Promise<SubscriptionPayment[]>;
   startCheckout(plan: PlanId): Promise<CheckoutResult>;
   /** Cancela ao fim do período já pago. */

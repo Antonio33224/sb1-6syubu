@@ -68,7 +68,6 @@ export function HomeView() {
   // Cidade salva que deixou de existir → volta para "todas".
   useEffect(() => {
     if (base && city && !base.cities.some((c) => c.city === city)) setCity('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base, city]);
 
   const scoped = useMemo<HomeData | null>(() => {

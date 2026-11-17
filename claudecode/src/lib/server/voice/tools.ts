@@ -12,7 +12,7 @@
  */
 import { z } from 'zod';
 import type { VenueCategory } from '@/types';
-import type { VoiceCard, VoiceToolResponse } from '@/lib/voice/shared';
+import { djKey, djUrl, type VoiceCard, type VoiceToolResponse } from '@/lib/voice/shared';
 import { VENUE_CATEGORIES, venueMinSpend, type ClassifyData, type EventRecord, type VenueRecord, type VenueStatsRecord } from './data';
 
 // ------------------------------------------------------------------ schemas (validação)
@@ -28,6 +28,10 @@ const styles = z
   .transform((v) => (Array.isArray(v) ? v : [v]));
 const limit = (max: number, def: number) => z.number().int().min(1).max(max).default(def);
 const dateRange = <T extends { data_inicio?: string; data_fim?: string }>(v: T) => !v.data_inicio || !v.data_fim || v.data_fim >= v.data_inicio;
+
+/** Máximo de opções exibidas na tela de uma vez. */
+export const MAX_DISPLAY_IDS = 8;
+const ID_RE = /^[a-z0-9][a-z0-9-]{0,119}$/;
 
 export const schemas = {
   buscar_casas: z.object({
@@ -59,6 +63,12 @@ export const schemas = {
   eventos_de_djs_seguidos: z
     .object({ data_inicio: isoDate.optional(), data_fim: isoDate.optional(), limite: limit(10, 6) })
     .refine(dateRange, 'data_fim deve ser igual ou posterior a data_inicio'),
+  // Os ids NÃO são validados aqui de propósito: ids malformados ou inexistentes são descartados na execução.
+  mostrar_opcoes: z.object({
+    tipo: z.enum(['casa', 'evento', 'dj']),
+    ids: z.array(z.string().max(200)).min(1).max(MAX_DISPLAY_IDS * 2),
+    titulo: z.string().trim().max(80).optional(),
+  }),
 } as const;
 
 export type VoiceToolName = keyof typeof schemas;
@@ -150,6 +160,22 @@ export const VOICE_TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    type: 'function',
+    name: 'mostrar_opcoes',
+    description:
+      'Mostra NA TELA as opções que você vai falar (cartões clicáveis), sincronizadas com a sua fala. Chame SEMPRE antes de apresentar casas, eventos ou DJs ao usuário, com os ids exatamente como vieram das outras ferramentas (casa_id, evento_id ou dj_id), na ordem em que vai citá-los. Ids que não existirem no banco são descartados.',
+    parameters: {
+      type: 'object',
+      properties: {
+        tipo: { type: 'string', enum: ['casa', 'evento', 'dj'] },
+        ids: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: MAX_DISPLAY_IDS, description: 'casa_id, evento_id ou dj_id retornados pelas buscas.' },
+        titulo: { type: 'string', description: 'Título curto acima dos cartões, ex.: "Techno no sábado".' },
+      },
+      required: ['tipo', 'ids'],
+      additionalProperties: false,
+    },
+  },
 ] as const satisfies readonly { type: 'function'; name: VoiceToolName; description: string; parameters: Record<string, unknown> }[];
 
 // ------------------------------------------------------------------ erros
@@ -205,7 +231,7 @@ function eventView(e: EventRecord) {
     nome: e.name,
     data: e.event_date,
     horario: e.start_time || null,
-    djs: e.dj_names,
+    djs: e.dj_names.map((nome) => ({ dj_id: djKey(nome), nome })),
     estilos: e.music_styles,
     ingresso_reais: e.ticket_price,
     casa: e.venue ? { casa_id: e.venue.slug, nome: e.venue.name, cidade: e.venue.city, bairro: e.venue.neighborhood || null } : null,
@@ -239,12 +265,28 @@ const eventCard = (e: EventRecord): VoiceCard => ({
   demo: e.is_demo,
 });
 
+const djCard = (d: { key: string; name: string; upcoming: number; next_date: string | null; followed: boolean }): VoiceCard => ({
+  tipo: 'dj',
+  id: d.key,
+  nome: d.name,
+  url: djUrl(d.name),
+  subtitulo: d.upcoming ? `${d.upcoming} ${d.upcoming === 1 ? 'próximo evento' : 'próximos eventos'}` : d.followed ? 'Você segue' : null,
+  nota: null,
+  num_reviews: null,
+  preco: null,
+  data: d.next_date,
+  demo: false,
+});
+
 const splitTerms = (s?: string) => (s ? s.split(/[,;]/).map((t) => t.trim()).filter(Boolean).slice(0, 6) : undefined);
 
 // ------------------------------------------------------------------ execução
 
 /** Métodos do banco usados pelas tools (permite testar com um banco falso). */
-export type VoiceDataSource = Pick<ClassifyData, 'searchVenues' | 'searchEvents' | 'venueDetails' | 'topReviews' | 'followedArtists' | 'eventsOfFollowedArtists'>;
+export type VoiceDataSource = Pick<
+  ClassifyData,
+  'searchVenues' | 'searchEvents' | 'venueDetails' | 'topReviews' | 'followedArtists' | 'eventsOfFollowedArtists' | 'venuesBySlugs' | 'eventsBySlugs' | 'djsByKeys'
+>;
 
 export async function executeVoiceTool(name: string, rawArgs: unknown, data: VoiceDataSource): Promise<VoiceToolResponse> {
   if (!isVoiceToolName(name)) throw new ToolInputError(`Ferramenta desconhecida: ${String(name).slice(0, 60)}`);
@@ -323,7 +365,7 @@ export async function executeVoiceTool(name: string, rawArgs: unknown, data: Voi
     case 'djs_seguidos_pelo_usuario': {
       parseToolArgs(name, rawArgs);
       const artists = await data.followedArtists();
-      return { output: { total: artists.length, seguidos: artists.map((x) => ({ nome: x.name, tipo: x.kind })) }, cards: [] };
+      return { output: { total: artists.length, seguidos: artists.map((x) => ({ dj_id: djKey(x.name), nome: x.name, tipo: x.kind })) }, cards: [] };
     }
 
     case 'eventos_de_djs_seguidos': {
@@ -332,11 +374,36 @@ export async function executeVoiceTool(name: string, rawArgs: unknown, data: Voi
       return {
         output: {
           djs_seguidos: res.artists.map((x) => x.name),
+          djs_seguidos_ids: res.artists.map((x) => djKey(x.name)),
           total_encontrado: res.total,
           resultados: res.items.map(eventView),
           ...(res.artists.length ? {} : { mensagem: 'O usuário ainda não segue nenhum DJ no Classify DJ.' }),
         },
         cards: res.items.map(eventCard),
+      };
+    }
+
+    case 'mostrar_opcoes': {
+      const a = parseToolArgs(name, rawArgs);
+      // Normaliza, remove duplicados e descarta ids malformados ANTES de consultar o banco.
+      const requested = [...new Set(a.ids.map((i) => i.trim()))];
+      const wellFormed = requested.filter((i) => ID_RE.test(i)).slice(0, MAX_DISPLAY_IDS);
+      let cards: VoiceCard[];
+      if (a.tipo === 'casa') cards = (await data.venuesBySlugs(wellFormed)).map((m) => venueCard(m.venue, m.stats));
+      else if (a.tipo === 'evento') cards = (await data.eventsBySlugs(wellFormed)).map(eventCard);
+      else cards = (await data.djsByKeys(wellFormed, djKey)).map(djCard);
+      const shown = new Set(cards.map((c) => c.id));
+      const discarded = requested.filter((i) => !shown.has(i));
+      return {
+        output: {
+          exibidos: cards.map((c) => ({ id: c.id, nome: c.nome })),
+          descartados: discarded.map((i) => i.slice(0, 60)),
+          ...(cards.length
+            ? { mensagem: 'Opções exibidas na tela. Cite-as pelos nomes acima, na mesma ordem.' }
+            : { mensagem: 'Nenhum id existe no Classify DJ; nada foi exibido. Faça uma busca e use os ids retornados.' }),
+        },
+        cards,
+        display: { titulo: a.titulo?.trim() || null },
       };
     }
   }

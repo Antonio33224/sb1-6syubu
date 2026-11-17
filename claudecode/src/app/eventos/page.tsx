@@ -1,11 +1,13 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { X } from 'lucide-react';
 import { useApp } from '@/components/providers/AppProviders';
 import { EventCard } from '@/components/cards/EventCard';
 import { FilterSelect, Tabs } from '@/components/ui/Controls';
 import { EmptyState, ErrorState, PageIntro, Skeleton } from '@/components/ui/States';
 import { useAsync } from '@/hooks/useAsync';
 import { localIso, weekWindow } from '@/lib/week';
+import { djKey } from '@/lib/voice/shared';
 
 type When = 'semana' | 'mes' | 'todos';
 
@@ -13,6 +15,15 @@ export default function EventosPage() {
   const { data, version } = useApp();
   const [when, setWhen] = useState<When>('todos');
   const [city, setCity] = useState('');
+  // ?dj=Nome — vem dos cartões de DJ do concierge de voz.
+  const [dj, setDj] = useState('');
+  useEffect(() => {
+    setDj((new URLSearchParams(window.location.search).get('dj') ?? '').slice(0, 120));
+  }, []);
+  const clearDj = () => {
+    setDj('');
+    window.history.replaceState(null, '', '/eventos');
+  };
   const { data: payload, error, reload } = useAsync(async () => {
     const [events, cities] = await Promise.all([data.listEvents({ from: localIso(new Date()) }), data.listCities()]);
     return { events, cities };
@@ -26,9 +37,10 @@ export default function EventosPage() {
     const to = when === 'semana' ? week.to : when === 'mes' ? localIso(month) : null;
     return payload.events
       .filter((e) => !city || e.venue.city === city)
+      .filter((e) => !dj || e.dj_names.some((n) => djKey(n) === djKey(dj)))
       .filter((e) => !to || e.event_date <= to)
       .sort((a, b) => a.event_date.localeCompare(b.event_date) || a.start_time.localeCompare(b.start_time));
-  }, [payload, when, city]);
+  }, [payload, when, city, dj]);
 
   return (
     <>
@@ -39,6 +51,11 @@ export default function EventosPage() {
           <FilterSelect label="Cidade" value={city} onChange={setCity}
             options={[{ value: '', label: 'Todas as cidades' }, ...(payload?.cities ?? []).map((c) => ({ value: c.city, label: `${c.city} — ${c.state}` }))]} />
         </div>
+        {dj && (
+          <p className="mt-6 flex flex-wrap items-center gap-2 text-[12px] text-mute">
+            Mostrando eventos com <span className="chip gap-2 text-bone">{dj}<button onClick={clearDj} aria-label="Remover filtro de DJ" className="hover:text-blue"><X className="h-3 w-3" /></button></span>
+          </p>
+        )}
         <div className="mt-10">
           {error ? (
             <ErrorState message={error} onRetry={reload} />

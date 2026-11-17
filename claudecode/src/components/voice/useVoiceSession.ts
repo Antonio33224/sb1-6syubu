@@ -17,6 +17,7 @@ export function useVoiceSession() {
   const [state, setState] = useState<VoiceState>('idle');
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [cards, setCards] = useState<VoiceCard[]>([]);
+  const [cardsTitle, setCardsTitle] = useState<string | null>(null);
   const [error, setError] = useState<VoiceError | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [textMode, setTextMode] = useState(false);
@@ -66,6 +67,7 @@ export function useVoiceSession() {
     setError(null);
     setNotice(null);
     setCards([]);
+    setCardsTitle(null);
     setCaptions([]);
     setMutedState(false);
     setTextMode(false);
@@ -79,7 +81,10 @@ export function useVoiceSession() {
           if (i >= 0) return list.map((x, j) => (j === i ? c : x));
           return [...list, c].slice(-MAX_CAPTIONS);
         }),
-      onCards: setCards,
+      onCards: (list, titulo) => {
+        setCards(list);
+        setCardsTitle(titulo ?? null);
+      },
       onTurn: persist,
       onNotice: (message, code) => {
         setNotice(message);
@@ -127,5 +132,5 @@ export function useVoiceSession() {
 
   useEffect(() => () => sessionRef.current?.stop('user'), []);
 
-  return { state, active, captions, cards, error, notice, textMode, muted, save, start, stop, setMuted, sendText, setSave, level, clearError };
+  return { state, active, captions, cards, cardsTitle, error, notice, textMode, muted, save, start, stop, setMuted, sendText, setSave, level, clearError };
 }

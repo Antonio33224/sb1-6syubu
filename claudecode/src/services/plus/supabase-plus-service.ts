@@ -26,6 +26,7 @@ import type {
   SubscriptionPayment,
   UserPreferences,
 } from '@/types';
+import type { PremiumGrant } from '@/types';
 import { ServiceError } from '../data-service';
 import type { BillingStatus, CheckoutResult, PlusService } from './plus-service';
 
@@ -103,6 +104,21 @@ export class SupabasePlusService implements PlusService {
     const { data, error } = await this.sb.from('subscriptions').select('*').eq('user_id', s.user.id).order('created_at', { ascending: false });
     fail(error);
     return (data ?? []) as Subscription[];
+  }
+
+  async listMyGrants(): Promise<PremiumGrant[]> {
+    const s = await this.session();
+    if (!s) return [];
+    const { data, error } = await this.sb
+      .from('premium_grants')
+      .select('id, user_id, source, coupon_id, starts_at, ends_at, reason, revoked_at, created_at')
+      .eq('user_id', s.user.id)
+      .is('revoked_at', null)
+      .gt('ends_at', new Date().toISOString())
+      .order('starts_at');
+    // Migração 0006 ainda não aplicada: segue só com as assinaturas.
+    if (error) return [];
+    return (data ?? []) as PremiumGrant[];
   }
 
   async listMyPayments() {

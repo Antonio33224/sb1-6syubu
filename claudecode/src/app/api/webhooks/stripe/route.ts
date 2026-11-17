@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminClient, billingConfig, fetchAndSync, syncStripeSubscription } from '@/lib/server/billing';
 import { verifyStripeSignature } from '@/lib/server/stripe';
+import { log } from '@/lib/server/log-sanitize';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
   const { error: dupError } = await db.from('billing_webhook_events').insert({ id: event.id, provider: 'stripe', type: event.type });
   if (dupError) {
     if (/duplicate key/i.test(dupError.message)) return NextResponse.json({ received: true, duplicate: true });
-    console.error('[webhook] idempotency', dupError.message);
+    log.error('[webhook] idempotency', dupError.message);
     return NextResponse.json({ error: 'Falha ao registrar evento.' }, { status: 500 });
   }
 
@@ -102,7 +103,7 @@ export async function POST(req: Request) {
   } catch (err) {
     // Libera o evento para que o Stripe tente novamente.
     await db.from('billing_webhook_events').delete().eq('id', event.id);
-    console.error('[webhook]', event.type, err);
+    log.error('[webhook]', event.type, err);
     return NextResponse.json({ error: 'Falha ao processar evento.' }, { status: 500 });
   }
 }

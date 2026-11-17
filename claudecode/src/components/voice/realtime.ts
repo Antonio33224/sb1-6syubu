@@ -30,7 +30,8 @@ export interface Caption {
 export interface RealtimeCallbacks {
   onState: (s: VoiceState) => void;
   onCaption: (c: Caption) => void;
-  onCards: (cards: VoiceCard[]) => void;
+  /** Cartões a exibir; `titulo` vem de mostrar_opcoes (exibição imediata, sincronizada com a fala). */
+  onCards: (cards: VoiceCard[], titulo?: string | null) => void;
   /** Turno finalizado (para salvar no histórico, se o usuário optou). */
   onTurn: (role: 'user' | 'assistant', text: string, cards: VoiceCard[]) => void;
   /** Aviso não fatal (ex.: microfone negado → modo texto). */
@@ -69,6 +70,8 @@ export class RealtimeVoiceSession {
   private tools = new Map<string, Promise<Record<string, unknown>>>();
   private handledCalls = new Set<string>();
   private turnCards: VoiceCard[] = [];
+  /** Cartões exibidos por mostrar_opcoes no turno atual (null = nenhum). */
+  private displayed: VoiceCard[] | null = null;
   private partial = new Map<string, string>();
   private state: VoiceState = 'idle';
   private stopped = false;
@@ -187,6 +190,7 @@ export class RealtimeVoiceSession {
     const t = text.trim().slice(0, 1000);
     if (!t || this.dc?.readyState !== 'open') return false;
     this.turnCards = [];
+    this.displayed = null;
     this.send({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: t }] } });
     this.send({ type: 'response.create' });
     const id = `text-${Date.now()}`;
@@ -213,6 +217,7 @@ export class RealtimeVoiceSession {
       case 'input_audio_buffer.speech_started':
         // Novo turno do usuário (inclusive interrompendo a IA).
         this.turnCards = [];
+        this.displayed = null;
         this.setState('listening');
         break;
       case 'input_audio_buffer.speech_stopped':
@@ -238,9 +243,15 @@ export class RealtimeVoiceSession {
         const t = String(ev.transcript ?? '').trim();
         this.caption('assistant', itemId, null, t);
         if (t) {
-          const cards = citedCards(t, this.turnCards);
-          if (cards.length) this.cb.onCards(cards);
-          this.cb.onTurn('assistant', t, cards);
+          if (this.displayed) {
+            // mostrar_opcoes já colocou os cartões na tela durante a fala.
+            this.cb.onTurn('assistant', t, this.displayed);
+          } else {
+            // Fallback: a IA citou resultados sem chamar mostrar_opcoes.
+            const cards = citedCards(t, this.turnCards);
+            if (cards.length) this.cb.onCards(cards);
+            this.cb.onTurn('assistant', t, cards);
+          }
         }
         break;
       }
@@ -282,11 +293,17 @@ export class RealtimeVoiceSession {
     this.setState('thinking');
     const p = runVoiceTool(this.session.session_id, item.name, item.arguments ?? '{}')
       .then((r) => {
-        this.turnCards.push(...r.cards);
+        if (r.display) {
+          // Exibe já — antes de a IA começar a falar das opções.
+          this.displayed = r.cards;
+          this.cb.onCards(r.cards, r.display.titulo);
+        } else {
+          this.turnCards.push(...r.cards);
+        }
         return r.output;
       })
       .catch((err: unknown) => {
-        if (err instanceof VoiceClientError && (err.status === 410 || err.status === 401)) {
+        if (err instanceof VoiceClientError && (err.status === 410 || err.status === 401 || err.code === 'subscription_required')) {
           setTimeout(() => this.stop('expired', err.message), 0);
         }
         return err instanceof VoiceClientError && err.output ? err.output : { erro: err instanceof Error ? err.message : 'Falha na consulta.' };

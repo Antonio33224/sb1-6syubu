@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { getPlusService, type PlusService } from '@/services/plus';
 import { resolveAccess } from '@/lib/plus/subscription';
-import type { AccessState, Subscription } from '@/types';
+import type { AccessState, PremiumGrant, Subscription } from '@/types';
 import { useApp } from './AppProviders';
 
 interface PlusContextValue {
@@ -30,6 +30,7 @@ export function PlusProvider({ children }: { children: ReactNode }) {
   const { user, authReady, version } = useApp();
   const plus = useMemo(() => getPlusService(), []);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [grants, setGrants] = useState<PremiumGrant[]>([]);
   const [ready, setReady] = useState(false);
   const [unread, setUnread] = useState(0);
   // Reavalia o acesso periodicamente (fim do teste/período durante a sessão).
@@ -38,13 +39,17 @@ export function PlusProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (!user) {
       setSubscriptions([]);
+      setGrants([]);
       setReady(true);
       return;
     }
     try {
-      setSubscriptions(await plus.listMySubscriptions());
+      const [subs, gr] = await Promise.all([plus.listMySubscriptions(), plus.listMyGrants().catch(() => [])]);
+      setSubscriptions(subs);
+      setGrants(gr);
     } catch {
       setSubscriptions([]);
+      setGrants([]);
     } finally {
       setReady(true);
     }
@@ -61,7 +66,7 @@ export function PlusProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const access = useMemo(() => (user ? resolveAccess(subscriptions) : FREE), [user, subscriptions, tick]);
+  const access = useMemo(() => (user ? resolveAccess(subscriptions, Date.now(), grants) : FREE), [user, subscriptions, grants, tick]);
 
   const refreshNotifications = useCallback(async () => {
     if (!user || access.tier !== 'premium') return setUnread(0);

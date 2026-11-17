@@ -51,7 +51,10 @@ export function FollowArtistButton({ name, kind = 'dj', className }: { name: str
     try {
       const now = await plus.toggleArtistFavorite(name, kind);
       setFollowing(now);
-      if (cache && user && cache.userId === user.id) now ? cache.keys.add(key) : cache.keys.delete(key);
+      if (cache && user && cache.userId === user.id) {
+        if (now) cache.keys.add(key);
+        else cache.keys.delete(key);
+      }
       toast(now ? `Você vai receber alertas de ${name}.` : `Você deixou de seguir ${name}.`);
       if (now) void refreshNotifications();
     } catch (err) {

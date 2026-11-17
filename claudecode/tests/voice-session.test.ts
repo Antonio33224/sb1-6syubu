@@ -15,12 +15,16 @@ const ENV = { OPENAI_API_KEY: API_KEY, NEXT_PUBLIC_SUPABASE_URL: 'https://x.supa
 
 type Rpc = Parameters<typeof fakeSupabase>[1];
 
-function makeDeps(opts: { authed?: boolean; env?: NodeJS.ProcessEnv; rpcs?: Rpc; openai?: (init: RequestInit) => Response; tables?: Record<string, Record<string, unknown>[]> } = {}) {
+function makeDeps(opts: { authed?: boolean; premium?: boolean | 'error'; env?: NodeJS.ProcessEnv; rpcs?: Rpc; openai?: (init: RequestInit) => Response; tables?: Record<string, Record<string, unknown>[]> } = {}) {
   const fake = fakeSupabase(opts.tables ?? {}, opts.rpcs ?? {});
   const fetchCalls: { url: string; init: RequestInit }[] = [];
   const deps: VoiceDeps = {
     config: () => voiceConfig(opts.env ?? ENV),
     authenticate: async (req) => (opts.authed === false || !req.headers.get('authorization') ? null : { db: fake.db, userId: 'u1' }),
+    hasPremium: async () => {
+      if (opts.premium === 'error') throw new Error('rpc has_premium indisponível');
+      return opts.premium ?? true;
+    },
     fetch: (async (url: string, init: RequestInit) => {
       fetchCalls.push({ url: String(url), init });
       return opts.openai ? opts.openai(init) : Response.json({ value: 'ek_temporario', expires_at: 1_900_000_000, session: { id: 'sess_1' } });

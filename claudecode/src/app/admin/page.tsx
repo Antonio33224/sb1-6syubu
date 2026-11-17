@@ -16,11 +16,14 @@ import { localIso } from '@/lib/week';
 import type { EventItem, PlatformSettings, ReviewStatus, Venue, VenueCategory } from '@/types';
 import { AUDIENCE_OPTIONS } from '@/lib/plus/advanced-filters';
 import { BenefitsAdmin, PlusMetricsAdmin } from '@/components/plus/admin/PlusAdmin';
+import { AuditAdmin, CouponsAdmin, GrantsAdmin, SecurityAdmin } from '@/components/admin/AccessAdmin';
 
-type Tab = 'geral' | 'plus' | 'beneficios' | 'boates' | 'eventos' | 'usuarios' | 'avaliacoes' | 'denuncias' | 'newsletter' | 'config';
+type Tab = 'geral' | 'plus' | 'cupons' | 'gratuidades' | 'beneficios' | 'boates' | 'eventos' | 'usuarios' | 'avaliacoes' | 'denuncias' | 'newsletter' | 'config' | 'seguranca' | 'auditoria';
 const TABS: { value: Tab; label: string }[] = [
   { value: 'geral', label: 'Visão geral' },
   { value: 'plus', label: 'Classify+' },
+  { value: 'cupons', label: 'Cupons' },
+  { value: 'gratuidades', label: 'Gratuidades' },
   { value: 'beneficios', label: 'Benefícios' },
   { value: 'boates', label: 'Estabelecimentos' },
   { value: 'eventos', label: 'Eventos e atrações' },
@@ -29,6 +32,8 @@ const TABS: { value: Tab; label: string }[] = [
   { value: 'denuncias', label: 'Denúncias' },
   { value: 'newsletter', label: 'Newsletter' },
   { value: 'config', label: 'Configurações' },
+  { value: 'seguranca', label: 'Segurança' },
+  { value: 'auditoria', label: 'Auditoria' },
 ];
 
 export default function AdminPage() {
@@ -61,6 +66,10 @@ export default function AdminPage() {
       <div className="mt-10">
         {tab === 'geral' && <Overview />}
         {tab === 'plus' && <PlusMetricsAdmin />}
+        {tab === 'cupons' && <CouponsAdmin />}
+        {tab === 'gratuidades' && <GrantsAdmin />}
+        {tab === 'seguranca' && <SecurityAdmin />}
+        {tab === 'auditoria' && <AuditAdmin />}
         {tab === 'beneficios' && <BenefitsAdmin />}
         {tab === 'boates' && <VenuesAdmin />}
         {tab === 'eventos' && <EventsAdmin />}
