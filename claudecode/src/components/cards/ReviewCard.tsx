@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Photo } from '@/components/ui/Photo';
 import { Score } from '@/components/ui/Score';
-import { DemoTag } from '@/components/ui/States';
+import { DemoTag, PreLaunchTag } from '@/components/ui/States';
 import { LikeButton, ReportButton } from '@/components/actions/Actions';
 import { formatDate, timeAgo } from '@/lib/format';
 import { CRITERIA, type ReviewWithMeta } from '@/types';
@@ -84,7 +84,8 @@ export function ReviewCard({ item, showVenue = true }: { item: ReviewWithMeta; s
           )}
           {review.experience_date && <span className="text-[11px] text-mute">Experiência em {formatDate(review.experience_date)}</span>}
           {review.status === 'flagged' && <span className="text-[10px] font-semibold uppercase tracking-nav text-mute">Em análise</span>}
-          {review.is_demo && <DemoTag className="ml-auto" />}
+          {review.source === 'pre_launch' && <PreLaunchTag className="ml-auto" />}
+          {review.is_demo && <DemoTag className={review.source === 'pre_launch' ? undefined : 'ml-auto'} />}
         </div>
       </div>
     </article>

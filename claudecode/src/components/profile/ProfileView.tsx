@@ -13,7 +13,7 @@ import { ClassifyMark } from '@/components/brand/ApprovedSeal';
 import { usePlus } from '@/components/providers/PlusProvider';
 import { PlusBadge } from '@/components/plus/PlusBadge';
 import { Tabs, FieldError } from '@/components/ui/Controls';
-import { EmptyState, Skeleton } from '@/components/ui/States';
+import { EmptyState, PreLaunchTag, Skeleton } from '@/components/ui/States';
 import { useAsync } from '@/hooks/useAsync';
 import { achievementsFor, levelFor, nextLevel } from '@/lib/levels';
 import { formatDate } from '@/lib/format';
@@ -69,6 +69,7 @@ export function ProfileView({ profile, own, initialTab = 'avaliacoes' }: { profi
                 <span>@{profile.username}</span>
                 {profile.city && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {profile.city}</span>}
                 <span>Desde {formatDate(profile.created_at)}</span>
+                {profile.is_imported && <PreLaunchTag />}
               </p>
               {profile.bio && <p className="mt-4 max-w-xl text-[14px] leading-relaxed text-bone/80">{profile.bio}</p>}
             </div>

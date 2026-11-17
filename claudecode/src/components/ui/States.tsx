@@ -33,6 +33,18 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
   );
 }
 
+/** Avaliação/perfil real coletado antes do lançamento e importado pela equipe. */
+export function PreLaunchTag({ className }: { className?: string }) {
+  return (
+    <span
+      title="Avaliação real coletada antes do lançamento do app e publicada com autorização do autor"
+      className={clsx('inline-flex items-center rounded-sm border border-line px-1.5 py-[1px] text-[8px] font-bold uppercase tracking-nav text-mute', className)}
+    >
+      Coletada no pré-lançamento
+    </span>
+  );
+}
+
 export function DemoTag({ className }: { className?: string }) {
   return (
     <span

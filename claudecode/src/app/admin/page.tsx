@@ -2,10 +2,12 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { clsx } from 'clsx';
-import { Download, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Download, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import { useApp, useToast } from '@/components/providers/AppProviders';
 import { Tabs, Modal, FieldError, FilterSelect } from '@/components/ui/Controls';
-import { EmptyState, Skeleton } from '@/components/ui/States';
+import { EmptyState, PreLaunchTag, Skeleton } from '@/components/ui/States';
+import { buildTemplateCsv, parseReviewImport, TEMPLATE_GUIDE, type ImportParseResult } from '@/lib/review-import';
+import { computeOverall } from '@/lib/rating';
 import { Avatar } from '@/components/ui/Avatar';
 import { Photo } from '@/components/ui/Photo';
 import { Score } from '@/components/ui/Score';
@@ -588,6 +590,7 @@ function ReviewsAdmin() {
 
   return (
     <div>
+      <ReviewImportPanel />
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <FilterSelect label="Status" value={status} onChange={setStatus} options={[{ value: 'all', label: 'Todas' }, { value: 'published', label: 'Publicadas' }, { value: 'flagged', label: 'Sinalizadas' }, { value: 'hidden', label: 'Ocultas' }]} />
         <p className="max-w-md text-[12px] text-mute">A moderação altera apenas a visibilidade. Notas e comentários de avaliações legítimas não podem ser editados por ninguém além do autor.</p>
@@ -598,7 +601,7 @@ function ReviewsAdmin() {
             {list.slice(0, limit).map((r) => (
               <li key={r.review.id} className="grid gap-3 p-4 sm:grid-cols-[1fr_auto] sm:items-center">
                 <div className="min-w-0">
-                  <p className="text-[13px]"><span className="font-semibold">@{r.author.username}</span> <span className="text-mute">em</span> <Link href={`/boates/${r.venue.slug}`} className="font-semibold hover:text-blue">{r.venue.name}</Link> <span className="ml-2 font-display font-bold text-blue">{r.review.overall_rating.toFixed(1)}</span></p>
+                  <p className="text-[13px]">{r.review.source === 'pre_launch' && <PreLaunchTag className="mr-2" />}<span className="font-semibold">@{r.author.username}</span> <span className="text-mute">em</span> <Link href={`/boates/${r.venue.slug}`} className="font-semibold hover:text-blue">{r.venue.name}</Link> <span className="ml-2 font-display font-bold text-blue">{r.review.overall_rating.toFixed(1)}</span></p>
                   <p className="mt-1 truncate text-[12px] text-mute">{r.review.comment || '(sem comentário)'}</p>
                 </div>
                 <select value={r.review.status} onChange={(e) => change(r.review.id, e.target.value as ReviewStatus)} className="field h-9 w-40 text-[12px]" aria-label="Status">
@@ -612,6 +615,155 @@ function ReviewsAdmin() {
           {limit < list.length && <button onClick={() => setLimit((l) => l + 30)} className="btn-ghost btn-sm mt-6">Carregar mais ({list.length - limit})</button>}
         </>
       )}
+    </div>
+  );
+}
+
+function ReviewImportPanel() {
+  const { data, bump } = useApp();
+  const toast = useToast();
+  const [showGuide, setShowGuide] = useState(false);
+  const [fileName, setFileName] = useState('');
+  const [parsed, setParsed] = useState<ImportParseResult | null>(null);
+  const [consent, setConsent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  const downloadTemplate = async () => {
+    const venues = await data.listVenues().catch(() => []);
+    const csv = buildTemplateCsv(venues.map((v) => v.slug));
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'modelo-avaliacoes-classifydj.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const onFile = async (f?: File) => {
+    if (!f) return;
+    if (f.size > 2_000_000) return toast('Arquivo muito grande (máx. 2 MB).', 'error');
+    if (/\.xlsx?$/i.test(f.name)) return toast('Salve a planilha como CSV (Arquivo › Salvar como › CSV) e envie novamente.', 'error');
+    try {
+      const [text, venues] = await Promise.all([f.text(), data.listVenues()]);
+      setFileName(f.name);
+      setConsent(false);
+      setServerError(null);
+      setParsed(parseReviewImport(text, venues));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível ler o arquivo.', 'error');
+    }
+  };
+
+  const close = () => {
+    setParsed(null);
+    setServerError(null);
+  };
+
+  const confirm = async () => {
+    if (!parsed?.rows.length) return;
+    setBusy(true);
+    setServerError(null);
+    try {
+      const res = await data.admin.importReviews(parsed.rows);
+      bump();
+      toast(`${res.created} ${res.created === 1 ? 'avaliação importada' : 'avaliações importadas'} · ${res.profiles_created} ${res.profiles_created === 1 ? 'perfil criado' : 'perfis criados'}.`);
+      close();
+    } catch (e) {
+      setServerError(e instanceof Error ? e.message : 'Erro ao importar.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const authors = parsed ? new Set(parsed.rows.map((r) => r.author_username)).size : 0;
+
+  return (
+    <div className="card mb-8 p-5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-xl">
+          <p className="eyebrow">Importar avaliações do pré-lançamento</p>
+          <p className="mt-2 text-[12px] leading-relaxed text-mute">
+            Para avaliações reais coletadas antes do lançamento (beta, formulário, evento) <span className="text-bone">com autorização de cada pessoa</span>.
+            Elas contam nas médias e rankings e aparecem com a tag “Coletada no pré-lançamento”.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <button onClick={downloadTemplate} className="btn-ghost btn-sm"><Download className="h-3.5 w-3.5" /> Baixar modelo</button>
+          <label className="btn-primary btn-sm cursor-pointer">
+            <Upload className="h-3.5 w-3.5" /> Importar planilha
+            <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} />
+          </label>
+        </div>
+      </div>
+      <button onClick={() => setShowGuide((v) => !v)} className="mt-4 text-[11px] font-semibold text-mute hover:text-bone">
+        {showGuide ? 'Ocultar colunas do modelo' : 'Ver colunas do modelo'}
+      </button>
+      {showGuide && (
+        <dl className="mt-3 grid gap-2 text-[12px]">
+          {TEMPLATE_GUIDE.map((g) => (
+            <div key={g.column} className="grid gap-1 sm:grid-cols-[260px_1fr]">
+              <dt className="font-mono text-[11px] text-blue">{g.column}</dt>
+              <dd className="text-mute">{g.help}</dd>
+            </div>
+          ))}
+          <p className="mt-2 text-[11px] text-mute">Edite no Excel ou Google Sheets e salve como <span className="text-bone">CSV</span>. A nota geral é calculada automaticamente.</p>
+        </dl>
+      )}
+
+      <Modal open={!!parsed} onClose={close} title="Prévia da importação" wide>
+        {parsed && (
+          <div className="flex flex-col gap-5">
+            <p className="text-[13px] text-mute">
+              <span className="text-bone">{fileName}</span> · {parsed.rows.length} {parsed.rows.length === 1 ? 'avaliação válida' : 'avaliações válidas'} de {authors} {authors === 1 ? 'autor' : 'autores'}
+              {parsed.errors.length > 0 && <> · <span className="text-bone">{new Set(parsed.errors.map((e) => e.line)).size} com erro</span></>}
+            </p>
+            {parsed.errors.length > 0 && (
+              <div className="max-h-48 overflow-y-auto rounded-card border border-line p-4">
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-nav text-bone">Corrija na planilha e envie de novo</p>
+                <ul className="flex flex-col gap-1 text-[12px] text-mute">
+                  {parsed.errors.map((e, i) => <li key={i}><span className="text-bone">Linha {e.line}:</span> {e.message}</li>)}
+                </ul>
+              </div>
+            )}
+            {parsed.rows.length > 0 && (
+              <div className="max-h-72 overflow-auto rounded-card border border-line">
+                <table className="w-full min-w-[640px] text-left text-[12px]">
+                  <thead className="sticky top-0 border-b border-line bg-ink text-[10px] uppercase tracking-nav text-mute">
+                    <tr><th className="p-3">Linha</th><th className="p-3">Autor</th><th className="p-3">Local</th><th className="p-3">Nota</th><th className="p-3">Comentário</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {parsed.rows.map((r) => (
+                      <tr key={r.line}>
+                        <td className="p-3 text-mute">{r.line}</td>
+                        <td className="p-3">{r.author_name || r.author_username} <span className="text-mute">@{r.author_username}</span></td>
+                        <td className="p-3 text-mute">{r.venue_slug}</td>
+                        <td className="p-3 font-display font-bold text-blue">{computeOverall(r).toFixed(1)}</td>
+                        <td className="max-w-[260px] truncate p-3 text-mute">{r.comment || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {parsed.errors.length === 0 && parsed.rows.length > 0 && (
+              <label className="flex cursor-pointer items-start gap-3 rounded-card border border-line p-4">
+                <input type="checkbox" className="mt-1 accent-[#83A9F5]" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+                <span className="text-[12px] leading-relaxed text-mute">
+                  Confirmo que estas avaliações foram escritas por pessoas reais, que autorizaram a publicação com o nome/apelido indicado.
+                </span>
+              </label>
+            )}
+            <FieldError message={serverError} />
+            <div className="flex justify-end gap-3">
+              <button onClick={close} className="btn-ghost btn-sm">Cancelar</button>
+              <button onClick={confirm} disabled={busy || !consent || parsed.errors.length > 0 || !parsed.rows.length} className="btn-primary btn-sm">
+                {busy ? 'Importando…' : `Importar ${parsed.rows.length}`}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
