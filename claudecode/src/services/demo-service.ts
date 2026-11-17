@@ -697,6 +697,45 @@ export class DemoService implements DataService {
       r.status = status;
       this.persist();
     },
+    importReviews: async (rows: Parameters<DataService['admin']['importReviews']>[0]) => {
+      const db = await this.requireAdmin();
+      if (rows.length === 0) throw new ServiceError('Nenhuma avaliação para importar.');
+      if (rows.length > 500) throw new ServiceError('Máximo de 500 avaliações por importação.');
+      // Valida tudo antes de gravar (tudo ou nada).
+      const byUsername = new Map(db.profiles.map((p) => [p.username, p]));
+      for (const r of rows) {
+        if (!db.venues.some((v) => v.id === r.venue_id)) throw new ServiceError(`Linha ${r.line}: estabelecimento não encontrado.`);
+        const cErr = validateCriteria(r) ?? validateComment(r.comment);
+        if (cErr) throw new ServiceError(`Linha ${r.line}: ${cErr}`);
+        const p = byUsername.get(r.author_username);
+        if (p && !p.is_imported) throw new ServiceError(`Linha ${r.line}: @${r.author_username} já pertence a uma conta real.`);
+        if (p && db.reviews.some((x) => x.user_id === p.id && x.venue_id === r.venue_id))
+          throw new ServiceError(`Linha ${r.line}: @${r.author_username} já avaliou este local.`);
+      }
+      let profilesCreated = 0;
+      for (const r of rows) {
+        let p = byUsername.get(r.author_username);
+        if (!p) {
+          p = { id: uid(), username: r.author_username, full_name: r.author_name, avatar_url: null, city: null, bio: null, role: 'user', is_demo: false, is_imported: true, created_at: now() };
+          db.profiles.push(p);
+          byUsername.set(p.username, p);
+          profilesCreated++;
+        }
+        const scores = {
+          music_rating: r.music_rating, crowd_rating: r.crowd_rating, atmosphere_rating: r.atmosphere_rating,
+          drinks_rating: r.drinks_rating, service_rating: r.service_rating, organization_rating: r.organization_rating,
+          experience_rating: r.experience_rating,
+        };
+        const ts = r.experience_date ? `${r.experience_date}T23:00:00.000Z` : now();
+        db.reviews.push({
+          id: uid(), user_id: p.id, venue_id: r.venue_id, ...scores, overall_rating: computeOverall(scores), comment: r.comment,
+          experience_date: r.experience_date, photos: [], status: 'published', is_demo: false, source: 'pre_launch',
+          created_at: ts, updated_at: ts,
+        });
+      }
+      this.persist();
+      return { created: rows.length, profiles_created: profilesCreated };
+    },
     listNewsletter: async () => {
       const db = await this.requireAdmin();
       return db.newsletter.slice().sort((a, b) => b.created_at.localeCompare(a.created_at));

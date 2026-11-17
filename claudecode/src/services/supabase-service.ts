@@ -564,6 +564,14 @@ export class SupabaseService implements DataService {
       const { error } = await this.sb.from('venue_reviews').update({ status }).eq('id', reviewId);
       fail(error);
     },
+    importReviews: async (rows: Parameters<DataService['admin']['importReviews']>[0]) => {
+      // Servidor revalida tudo e grava em uma única transação (admin_import_reviews).
+      const payload = rows.map(({ line, venue_slug: _s, ...r }) => ({ ...r, line }));
+      const { data, error } = await this.sb.rpc('admin_import_reviews', { p_rows: payload });
+      fail(error);
+      const res = (data ?? {}) as Record<string, unknown>;
+      return { created: num(res.created), profiles_created: num(res.profiles_created) };
+    },
     listNewsletter: async () => {
       const { data, error } = await this.sb.from('newsletter').select('*').order('created_at', { ascending: false });
       fail(error);

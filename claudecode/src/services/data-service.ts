@@ -22,6 +22,7 @@ import type {
   VenueStats,
   ReviewStatus,
 } from '@/types';
+import type { ImportResult, ReviewImportRow } from '@/lib/review-import';
 
 export type DataMode = 'demo' | 'supabase';
 
@@ -97,6 +98,8 @@ export interface DataService {
     listReports(): Promise<ReportWithMeta[]>;
     resolveReport(reportId: string, action: 'dismiss' | 'hide_review'): Promise<void>;
     setReviewStatus(reviewId: string, status: ReviewStatus): Promise<void>;
+    /** Importa avaliações reais do pré-lançamento (tudo ou nada). Linhas já validadas por parseReviewImport. */
+    importReviews(rows: ReviewImportRow[]): Promise<ImportResult>;
     listNewsletter(): Promise<NewsletterEntry[]>;
     deleteNewsletter(id: string): Promise<void>;
     updateSettings(s: PlatformSettings): Promise<void>;

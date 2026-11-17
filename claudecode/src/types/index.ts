@@ -16,6 +16,8 @@ export interface Profile {
   bio: string | null;
   role: UserRole;
   is_demo: boolean;
+  /** Perfil criado pela importação de avaliações do pré-lançamento (sem login). */
+  is_imported?: boolean;
   created_at: string;
 }
 
@@ -93,9 +95,13 @@ export interface VenueReview extends CriteriaScores {
   photos: string[];
   status: ReviewStatus;
   is_demo: boolean;
+  /** 'app' = escrita no app; 'pre_launch' = coletada antes do lançamento e importada pelo admin. */
+  source?: ReviewSource;
   created_at: string;
   updated_at: string;
 }
+
+export type ReviewSource = 'app' | 'pre_launch';
 
 export interface ReviewRevision extends CriteriaScores {
   id: string;
