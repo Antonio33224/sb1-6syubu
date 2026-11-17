@@ -1,4 +1,4 @@
--- =====================================================================
+ -- =====================================================================
 -- CLASSIFY DJ — DADOS DE DEMONSTRAÇÃO (fictícios, is_demo = true)
 -- Gerado em 2026-11-16T15:10:49.534Z por scripts/generate-seed-sql.ts
 -- Remover: select public.remove_demo_data();

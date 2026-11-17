@@ -15,7 +15,6 @@ export const NAV = [
   { href: '/rankings', label: 'Rankings' },
   { href: '/reviews', label: 'Reviews' },
   { href: '/descobrir', label: 'Descobrir' },
-  { href: '/classify-ai', label: 'Classify AI' },
   { href: '/editorial', label: 'Editorial' },
 ];
 

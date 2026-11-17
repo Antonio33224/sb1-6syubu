@@ -1,16 +1,17 @@
 import type { Config } from 'tailwindcss';
+import { palette } from './src/lib/theme';
 
 const config: Config = {
   content: ['./src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
-        ink: { DEFAULT: '#050505', 2: '#0A0A0A' },
-        panel: '#111111',
-        line: '#292929',
-        bone: '#F5F5F5',
-        mute: '#A0A0A0',
-        blue: { DEFAULT: '#83A9F5', soft: 'rgba(131,169,245,0.12)' },
+        ink: { DEFAULT: palette.ink, 2: palette.ink2 },
+        panel: palette.panel,
+        line: palette.line,
+        bone: palette.bone,
+        mute: palette.mute,
+        blue: { DEFAULT: palette.blue, soft: palette.blueSoft },
       },
       fontFamily: {
         display: ['var(--font-display)', 'system-ui', 'sans-serif'],

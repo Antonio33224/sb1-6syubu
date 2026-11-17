@@ -7,6 +7,8 @@ import { PlusProvider } from '@/components/providers/PlusProvider';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { DemoBadge } from '@/components/layout/DemoBadge';
+import { VoiceAssistant } from '@/components/voice/VoiceAssistant';
+import { palette } from '@/lib/theme';
 
 export const metadata: Metadata = {
   title: { default: 'Classify DJ — We rate the night.', template: '%s · Classify DJ' },
@@ -14,7 +16,8 @@ export const metadata: Metadata = {
   icons: { icon: '/favicon.svg' },
 };
 
-export const viewport: Viewport = { themeColor: '#050505' };
+// viewportFit "cover" habilita env(safe-area-inset-*) para o orbe no mobile.
+export const viewport: Viewport = { themeColor: palette.ink, viewportFit: 'cover' };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -26,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <main className="min-h-[60vh]">{children}</main>
             <Footer />
             <DemoBadge />
+            <VoiceAssistant />
           </PlusProvider>
         </AppProviders>
       </body>

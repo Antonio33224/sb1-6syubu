@@ -19,7 +19,7 @@ Sem variáveis de ambiente o site sobe em **modo demonstração** (ver abaixo). 
 | `npm run dev` | Servidor de desenvolvimento |
 | `npm run build` / `npm start` | Build e servidor de produção |
 | `npm run typecheck` | Checagem de tipos |
-| `npm test` | Testes do motor de notas/rankings/níveis (node:test) |
+| `npm test` | Testes (node:test): notas/rankings/níveis, Classify+, concierge de voz |
 | `npm run db:seed-sql` | Regenera `supabase/seed.sql` a partir dos dados demo |
 
 ## Modo demonstração vs. Supabase
@@ -37,7 +37,7 @@ Contas de teste no modo demo (senha `classify123`):
 ## Configurar o Supabase
 
 1. Crie um projeto em [supabase.com](https://supabase.com).
-2. No **SQL Editor**, execute `supabase/migrations/0001_classify_schema.sql` (tabelas, índices, constraints, triggers, RLS, RPCs, buckets do Storage), depois `supabase/migrations/0002_venue_prices.sql` (média e faixas de preço por casa; campos opcionais — `NULL` = não informado) e `supabase/migrations/0003_classify_plus.sql` (Classify+: assinaturas, preferências, alertas, benefícios, histórico, RLS).
+2. No **SQL Editor**, execute `supabase/migrations/0001_classify_schema.sql` (tabelas, índices, constraints, triggers, RLS, RPCs, buckets do Storage), depois `supabase/migrations/0002_venue_prices.sql` (média e faixas de preço por casa; campos opcionais — `NULL` = não informado), `supabase/migrations/0003_classify_plus.sql` (Classify+: assinaturas, preferências, alertas, benefícios, histórico, RLS), `0004_classify_ai.sql` e `0005_voice_assistant.sql` (concierge de voz).
 3. (Opcional) Execute `supabase/seed.sql` para carregar os dados demonstrativos — rode `npm run db:seed-sql` antes para gerar datas relativas a hoje.
 4. Copie `.env.example` para `.env.local` e preencha:
 
@@ -112,28 +112,55 @@ Fluxo: `/api/billing/checkout` cria a sessão → usuário paga no Stripe → o 
 - **Banners de terceiros**: espaço `AdSlot` pronto; em produção só aparece com `NEXT_PUBLIC_ADS_ENABLED=true` e nunca para assinantes.
 - **Benefícios**: os demonstrativos são marcados “Exemplo” e não podem ser resgatados no Supabase; cadastre acordos reais no painel.
 
-## Classify AI (Claude — API oficial da Anthropic)
+## Concierge de voz (OpenAI Realtime)
 
-Concierge em `/classify-ai` que conversa com o usuário e recomenda casas e eventos **somente a partir do banco real**. Cada mensagem é uma chamada real à Messages API da Anthropic (SDK oficial `@anthropic-ai/sdk`, streaming); não há respostas fixas nem modo simulado.
+Assistente de voz no estilo Siri que mora num **orbe flutuante** no canto inferior direito de todas as páginas (montado em `app/layout.tsx`). Ele substitui o antigo Classify AI em texto; `/classify-ai` redireciona (301) para a home. A IA **só responde com dados do banco**, via function calling.
 
 **Configuração**
 
-1. Crie uma chave em [platform.claude.com](https://platform.claude.com) e defina `ANTHROPIC_API_KEY` em `.env.local` (local) e em *Project Settings → Environment Variables* na Vercel (Production e Preview). Nunca use `NEXT_PUBLIC_` para ela.
-2. Aplique `supabase/migrations/0004_classify_ai.sql` (cota por usuário, registro de tokens e conversas salvas).
-3. Opcional: `CLASSIFY_AI_MODEL` (padrão `claude-opus-5-5`, centralizado em `src/lib/server/classify-ai/config.ts`), `CLASSIFY_AI_MAX_TOKENS`, `CLASSIFY_AI_MAX_TOOL_ROUNDS`, `CLASSIFY_AI_INCLUDE_DEMO`.
+1. Defina `OPENAI_API_KEY` em `.env.local` e nas variáveis de ambiente da Vercel. Nunca use `NEXT_PUBLIC_` para ela.
+2. Aplique `supabase/migrations/0004_classify_ai.sql` (conversas salvas) e `0005_voice_assistant.sql` (sessões de voz, rate limit, limite de duração e de consultas).
+3. Opcional: `VOICE_MODEL` (padrão `gpt-realtime-2.1`), `VOICE_NAME` (padrão `marin`), `VOICE_TRANSCRIBE_MODEL`, `VOICE_INCLUDE_DEMO`. Os padrões ficam em `src/lib/server/voice/config.ts`.
+4. Limites em `platform_settings`: `voice_hourly_sessions` (6), `voice_daily_sessions` (20), `voice_max_session_seconds` (600 = 10 min), `voice_max_tool_calls` (60 por sessão).
 
-Sem a chave, a rota responde **503** com “ANTHROPIC_API_KEY não foi definida”. Sem o Supabase (modo demonstração), a página explica que a IA fica desativada em vez de inventar dados.
+Sem a chave a rota responde **503**. Sem o Supabase (modo demonstração) o orbe aparece, mas explica que o concierge fica desativado. Sem login, o orbe pede para entrar.
 
-**Como funciona** (`src/lib/server/classify-ai/`)
+**Fluxo** (token efêmero → WebRTC → tool calls → banco)
 
-- `POST /api/classify-ai/chat` exige login (token Supabase), valida a mensagem (≤ 2000 caracteres), reserva a cota no banco (`ai_consume_quota`: 20/hora e 100/dia por padrão, ajustáveis em `platform_settings`) e devolve a resposta em streaming NDJSON.
-- O Claude consulta o banco por **ferramentas somente leitura** (`search_venues`, `search_events`, `get_venue_details`, `get_catalog_overview`, `get_my_preferences`), executadas com o token do próprio usuário — a RLS vale para a IA também. Ela não tem nenhuma ferramenta de escrita: não altera avaliações, notas nem dados administrativos.
-- Preferências do **Meu Ranking** (preset ativo), favoritos e DJs seguidos personalizam a busca.
-- O servidor registra cada registro devolvido ao modelo; os cartões abaixo da resposta são apenas os registros consultados **e citados** — sempre com link para a página real.
-- Controle de custo: histórico reenviado limitado (20 mensagens / 24 mil caracteres), teto de tokens por chamada, no máximo 6 rodadas de consulta por mensagem, esforço `low`, prompt caching e tokens gravados em `ai_usage_events`.
-- Conversas salvas (opcional, padrão ligado) ficam em `ai_conversations`/`ai_messages`, privadas por RLS e apagáveis pelo usuário.
+```
+navegador                          servidor (Next)                       OpenAI / Supabase
+─────────                          ───────────────                       ─────────────────
+clique no orbe → getUserMedia
+POST /api/voice/session ─────────► auth Supabase + voice_start_session (rate limit no banco)
+                                   POST /v1/realtime/client_secrets ───► (OPENAI_API_KEY)
+              ◄──────────────────── { client_secret: "ek_…", session_id, max_seconds }
+SDP offer ─────────────────────────────────────────────────────────────► POST /v1/realtime/calls (Bearer ek_…)
+áudio ⇄ WebRTC · eventos JSON no data channel "oai-events"
+function_call (data channel)
+POST /api/voice/tool ────────────► voice_register_tool_call (sessão do usuário? ativa? < 10 min? < teto?)
+                                   zod → consulta somente leitura com o token do usuário (RLS) ──► Postgres
+              ◄──────────────────── { output, cards }
+function_call_output + response.create → a IA fala usando só esses dados
+```
 
-**Teste real:** `npm run ai:smoke` chama a API da Anthropic de verdade: verifica a chave e o modelo, a resposta do Claude, uma conversa de 2 turnos com o banco (contexto mantido, ferramentas chamadas, todo registro citado conferido por id/slug/nome) e, com `CLASSIFY_AI_BASE_URL`, a rota HTTP em streaming (local ou na Vercel). Etapas sem configuração aparecem como **NÃO TESTADO**, nunca como aprovadas.
+- `src/lib/server/voice/config.ts`: modelo, voz, instruções de sistema (pt-BR, respostas curtas, ferramenta obrigatória antes de falar de casas/eventos/preços/notas, recusa fora do tema).
+- `src/lib/server/voice/tools.ts`: definições das tools + schemas zod + execução. Respostas com só os campos necessários e limite de linhas.
+- `src/lib/server/voice/data.ts`: consultas ao Supabase (query builder parametrizado, somente leitura). `djs_seguidos_pelo_usuario` usa o id da **sessão autenticada**, nunca um id vindo da IA.
+- `src/lib/server/voice/handlers.ts`: rotas `/api/voice/session`, `/api/voice/tool` e `/api/voice/transcripts` (com dependências injetáveis para testes).
+- `src/components/voice/realtime.ts`: WebRTC, data channel, legendas (transcrição de entrada e saída), tool calls, interrupção (VAD do servidor com `interrupt_response`), limite de duração no cliente.
+- `src/components/voice/VoiceAssistant.tsx`: orbe e painel (desktop: 420px no canto; mobile: tela cheia), legendas ao vivo, cartões clicáveis dos registros **consultados e citados**, mutar, encerrar, histórico. Atalhos: **Ctrl/Cmd + J** abre/fecha, **Esc** fecha o painel (a conversa continua no orbe). O Ctrl/Cmd + K já é da busca.
+- Sem permissão de microfone: campo de texto que manda mensagens para a **mesma sessão realtime** (a resposta continua em voz e legenda).
+- **Salvar conversas** é opt-in (desligado por padrão). As transcrições vão para `ai_conversations` (`channel = 'voice'`) e `ai_messages`, privadas por RLS e apagáveis no histórico do painel.
+
+**Animação** (`src/components/voice/particles/`): Three.js carregado por `import()` dinâmico. Geoide = `IcosahedronGeometry` deformada no vertex shader por simplex noise (3 oitavas), renderizado em pontos com fresnel e gradiente pela altura. Partículas GPGPU (ping-pong FBO via `GPUComputationRenderer`): ~50k no desktop, ~20k no mobile, ~12k com `prefers-reduced-motion`. Elas nascem na superfície deformada, saem pela normal, seguem curl noise e envelhecem. Velocidade e emissão acompanham a amplitude do microfone ou da fala da IA. Bloom (`UnrealBloomPass`), blending aditivo e escurecimento por profundidade. Um único `<canvas>` é reaproveitado entre orbe e painel, com DPR ≤ 2, pausando quando a aba fica oculta ou o orbe sai do viewport. As cores vêm de `src/lib/theme.ts`, os mesmos tokens do Tailwind.
+
+**Como adicionar uma tool**
+
+1. Em `tools.ts`, adicione o schema zod em `schemas`, a definição (mesmo `name`) em `VOICE_TOOLS` e o `case` em `executeVoiceTool`, devolvendo `{ output, cards }`.
+2. Se precisar de uma consulta nova, crie o método (somente leitura) em `ClassifyData` (`data.ts`) e inclua-o em `VoiceDataSource`.
+3. Rode `npm test`: o teste de sincronia falha se definição e schema divergirem. Escreva testes de validação e de "só dados do banco" em `tests/voice-tools.test.ts`.
+
+**Testes:** `npm test` cobre validação de argumentos, somente leitura, "só dados do banco" (Supabase falso em `tests/helpers/fake-supabase.ts`), auth, rate limit, token efêmero sem vazar a chave e tool calls em sessões expiradas. O fluxo de áudio real (WebRTC) é testado manualmente no navegador.
 
 ## Como o ranking é calculado
 
