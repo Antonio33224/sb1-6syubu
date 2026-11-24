@@ -8,15 +8,11 @@ export const dynamic = 'force-dynamic';
 
 type Props = { params: Promise<{ slug: string }> };
 
-/**
- * Festa "Oculta" (ou suspensa/rascunho) não existe na view pública → 404 real.
- * No modo demonstração (sem Supabase) a página é resolvida no navegador.
- */
+/** Festa "Oculta" (ou suspensa/rascunho) não existe na view pública → 404 real. */
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const found = await findPublicEvent(slug).catch(() => null);
-  if (!found || found.mode === 'demo' || !found.row) return { title: 'Evento' };
-  const r = found.row;
+  const r = await findPublicEvent(slug).catch(() => null);
+  if (!r) return { title: 'Evento' };
   const name = r.name_hidden || !r.name ? HIDDEN_TEXT.name : String(r.name);
   const where = r.location_hidden ? String(r.city ?? '') : [r.location_name, r.city].filter(Boolean).join(' · ');
   return {
@@ -29,7 +25,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function EventPage({ params }: Props) {
   const { slug } = await params;
-  const found = await findPublicEvent(slug);
-  if (found.mode === 'supabase' && !found.row) notFound();
+  if (!(await findPublicEvent(slug))) notFound();
   return <EventView slug={slug} />;
 }

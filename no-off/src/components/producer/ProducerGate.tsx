@@ -3,7 +3,6 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { useApp } from '@/components/providers/AppProviders';
 import { EmptyState, Skeleton } from '@/components/ui/States';
-import { ticketsAvailable } from '@/services/ticket-service';
 
 /**
  * Libera o painel para admin_festa / super_admin (não suspensos).
@@ -11,12 +10,6 @@ import { ticketsAvailable } from '@/services/ticket-service';
  */
 export function ProducerGate({ children, next = '/produtor' }: { children: ReactNode; next?: string }) {
   const { user, authReady } = useApp();
-  if (!ticketsAvailable())
-    return (
-      <div className="container-site py-24">
-        <EmptyState title="Painel indisponível no modo demonstração" text="O painel do produtor exige o Supabase configurado (veja o README)." />
-      </div>
-    );
   if (!authReady) return <div className="container-site py-16"><Skeleton className="h-96" /></div>;
   if (!user)
     return (

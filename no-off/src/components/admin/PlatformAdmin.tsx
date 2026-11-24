@@ -13,13 +13,8 @@ import { FilterSelect, Modal } from '@/components/ui/Controls';
 import { EmptyState, ErrorState, Skeleton } from '@/components/ui/States';
 import { useAsync } from '@/hooks/useAsync';
 import { brlCents, formatDate } from '@/lib/format';
-import { adminApi, apiAvailable, type AuditEntry, type VisibilityInput } from '@/services/api-client';
+import { adminApi, type AuditEntry, type VisibilityInput } from '@/services/api-client';
 import { ORDER_STATUS_LABEL, PAYMENT_METHOD_LABEL, type AdminEventRow } from '@/types';
-
-function SupabaseOnly({ children }: { children: ReactNode }) {
-  if (apiAvailable()) return <>{children}</>;
-  return <EmptyState title="Disponível apenas com Supabase" text="Festas, produtores e vendas exigem o banco de dados real." />;
-}
 
 const VIS_LABEL = { hidden: 'Oculta', partial: 'Visível com informações ocultas', visible: 'Visível' } as const;
 const STATUS_LABEL: Record<string, string> = { draft: 'Rascunho', published: 'Publicada', cancelled: 'Cancelada', suspended: 'Suspensa' };
@@ -27,7 +22,7 @@ const STATUS_LABEL: Record<string, string> = { draft: 'Rascunho', published: 'Pu
 // ------------------------------------------------------------------ festas
 
 export function PlatformEventsAdmin() {
-  return <SupabaseOnly><EventsInner /></SupabaseOnly>;
+  return <EventsInner />;
 }
 
 function EventsInner() {
@@ -190,7 +185,7 @@ function LogsModal({ title, target, onClose }: { title: string; target: string; 
 // ------------------------------------------------------------------ produtores
 
 export function ProducersAdmin() {
-  return <SupabaseOnly><ProducersInner /></SupabaseOnly>;
+  return <ProducersInner />;
 }
 
 function ProducersInner() {
@@ -251,7 +246,7 @@ function ProducersInner() {
 // ------------------------------------------------------------------ vendas
 
 export function SalesAdmin() {
-  return <SupabaseOnly><SalesInner /></SupabaseOnly>;
+  return <SalesInner />;
 }
 
 function SalesInner() {

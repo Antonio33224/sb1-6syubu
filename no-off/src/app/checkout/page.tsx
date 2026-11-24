@@ -12,7 +12,7 @@ import { useAsync } from '@/hooks/useAsync';
 import { brlCents, formatEventDate } from '@/lib/format';
 import { formatCpf, formatPhone, isFullName, isValidCpf, isValidPhone, onlyDigits } from '@/lib/cpf';
 import { ApiError, checkoutApi, type PayResponse, type ReserveResponse } from '@/services/api-client';
-import { ticketService, ticketsAvailable } from '@/services/ticket-service';
+import { ticketService } from '@/services/ticket-service';
 import { TICKET_TYPE_LABEL, type BuyerInfo } from '@/types';
 
 export default function CheckoutPage() {
@@ -54,7 +54,7 @@ function Checkout() {
   }, [authReady, user, router, params]);
 
   useEffect(() => {
-    if (!user || !ticketsAvailable()) return;
+    if (!user) return;
     ticketService
       .sessionContact()
       .then((c) => setBuyer((b) => ({ ...b, name: b.name || user.full_name, email: b.email || c.email, phone: b.phone || formatPhone(c.phone.replace(/^\+?55/, '')) })))
@@ -84,7 +84,7 @@ function Checkout() {
   }, [step, order, router]);
 
   const { data: base, error: loadError } = useAsync(async () => {
-    if (!slug || !ticketsAvailable()) return null;
+    if (!slug) return null;
     const event = await data.getEvent(slug);
     if (!event) return null;
     const batches = await ticketService.batches(event.id);
@@ -99,8 +99,6 @@ function Checkout() {
   }, [base, items]);
   const subtotal = lines.reduce((s, l) => s + l.quantity * (l.batch!.price ?? 0), 0);
 
-  if (!ticketsAvailable())
-    return <div className="container-site py-24"><EmptyState title="Compra indisponível" text="A venda de ingressos exige o Supabase e o Mercado Pago configurados." action={{ href: '/eventos', label: 'Ver a agenda' }} /></div>;
   if (!authReady || !user || (!base && !loadError)) return <div className="container-site py-16"><Skeleton className="h-96" /></div>;
   if (!base || !lines.length)
     return <div className="container-site py-24"><EmptyState title="Nada para pagar" text="Escolha os ingressos na página do evento." action={{ href: slug ? `/eventos/${slug}` : '/eventos', label: 'Voltar ao evento' }} /></div>;

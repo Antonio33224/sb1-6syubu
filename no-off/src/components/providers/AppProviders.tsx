@@ -1,6 +1,6 @@
 'use client';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { getDataService, type DataService } from '@/services';
+import { getDataService, SUPABASE_CONFIGURED, type DataService } from '@/services';
 import type { Favorite, Profile } from '@/types';
 
 // ---------------------------------------------------------------- auth / data
@@ -34,6 +34,21 @@ const ToastContext = createContext<(message: string, tone?: Toast['tone']) => vo
 export const useToast = () => useContext(ToastContext);
 
 export function AppProviders({ children }: { children: ReactNode }) {
+  if (!SUPABASE_CONFIGURED) {
+    return (
+      <div className="container-site py-24">
+        <p className="eyebrow">Configuração ausente</p>
+        <p className="mt-3 max-w-xl text-sm leading-relaxed text-mute">
+          Defina <code>NEXT_PUBLIC_SUPABASE_URL</code> e <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> no <code>.env.local</code> (veja o{' '}
+          <code>.env.example</code> e o README) e reinicie o servidor.
+        </p>
+      </div>
+    );
+  }
+  return <ConfiguredProviders>{children}</ConfiguredProviders>;
+}
+
+function ConfiguredProviders({ children }: { children: ReactNode }) {
   const data = useMemo(() => getDataService(), []);
   const [user, setUser] = useState<Profile | null>(null);
   const [authReady, setAuthReady] = useState(false);

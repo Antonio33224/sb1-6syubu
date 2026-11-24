@@ -7,7 +7,7 @@ import { useApp } from '@/components/providers/AppProviders';
 import { EmptyState, Skeleton } from '@/components/ui/States';
 import { brlCents, formatEventDate } from '@/lib/format';
 import { checkoutApi } from '@/services/api-client';
-import { ticketService, ticketsAvailable, type MyOrder } from '@/services/ticket-service';
+import { ticketService, type MyOrder } from '@/services/ticket-service';
 import { ORDER_STATUS_LABEL, PAYMENT_METHOD_LABEL } from '@/types';
 
 /** Confirmação do pedido: acompanha o status até o pagamento ser aprovado pelo webhook. */
@@ -23,7 +23,7 @@ export default function PedidoPage() {
   }, [authReady, user, router, id]);
 
   useEffect(() => {
-    if (!user || !ticketsAvailable()) return;
+    if (!user) return;
     let stop = false;
     const tick = async () => {
       try {
@@ -43,7 +43,6 @@ export default function PedidoPage() {
     };
   }, [user, id]);
 
-  if (!ticketsAvailable()) return <div className="container-site py-24"><EmptyState title="Indisponível no modo demonstração" /></div>;
   if (order === undefined) return <div className="container-site py-16"><Skeleton className="h-80" /></div>;
   if (order === null) return <div className="container-site py-24"><EmptyState title="Pedido não encontrado" action={{ href: '/meus-ingressos', label: 'Meus ingressos' }} /></div>;
 

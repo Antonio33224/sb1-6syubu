@@ -40,7 +40,7 @@ const TABS: { value: Tab; label: string }[] = [
 ];
 
 export default function AdminPage() {
-  const { user, authReady, data } = useApp();
+  const { user, authReady } = useApp();
   const [tab, setTab] = useState<Tab>('geral');
 
   if (!authReady) return <div className="container-site py-16"><Skeleton className="h-96" /></div>;
@@ -61,9 +61,6 @@ export default function AdminPage() {
           <p className="eyebrow">Painel administrativo</p>
           <h1 className="mt-3 font-display text-[36px] font-extrabold uppercase leading-none tracking-tight sm:text-[48px]">Backstage.</h1>
         </div>
-        <span className="rounded-full border border-line px-4 py-2 text-[10px] font-bold uppercase tracking-nav text-mute">
-          {data.mode === 'demo' ? 'Modo demonstração' : 'Supabase conectado'}
-        </span>
       </div>
       <Tabs className="mt-10" value={tab} onChange={setTab} items={TABS} />
       <div className="mt-10">
@@ -925,15 +922,12 @@ function SettingsAdmin() {
           <p className="mt-3 text-[13px] leading-relaxed text-mute">Remove todas as casas, eventos, usuários e avaliações marcados como demonstração (is_demo). Conteúdo criado por usuários reais é mantido.</p>
           <div className="mt-5 flex flex-wrap gap-3">
             <button onClick={() => setConfirmDemo(true)} className="btn-outline btn-sm">Remover dados demo</button>
-            {data.admin.resetDemo && (
-              <button onClick={async () => { await data.admin.resetDemo!(); location.href = '/'; }} className="btn-ghost btn-sm">Redefinir demonstração</button>
-            )}
           </div>
         </div>
       </div>
 
       <Modal open={confirmDemo} onClose={() => setConfirmDemo(false)} title="Remover dados demonstrativos">
-        <p className="text-sm text-mute">Todos os registros marcados como demonstração serão excluídos permanentemente{data.mode === 'demo' ? ' (incluindo a conta demo de usuário, mas não a sua sessão atual)' : ''}. Esta ação não pode ser desfeita.</p>
+        <p className="text-sm text-mute">Todos os registros marcados como demonstração serão excluídos permanentemente. Esta ação não pode ser desfeita.</p>
         <div className="mt-6 flex justify-end gap-3">
           <button onClick={() => setConfirmDemo(false)} className="btn-ghost btn-sm">Cancelar</button>
           <button onClick={removeDemo} className="btn-outline btn-sm">Remover</button>

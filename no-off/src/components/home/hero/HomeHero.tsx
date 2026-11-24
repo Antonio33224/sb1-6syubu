@@ -4,7 +4,7 @@ import { useMemo, useRef } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
 import { localIso } from '@/lib/week';
-import { ticketService, ticketsAvailable } from '@/services/ticket-service';
+import { ticketService } from '@/services/ticket-service';
 import type { EventWithVenue } from '@/types';
 import { BuyDisc, LotCountdown } from './BuyDisc';
 import { HeroBackdrop } from './HeroBackdrop';
@@ -33,7 +33,7 @@ export function HomeHero({ events, cities, city, onCity, failed }: HomeHeroProps
 
   // Lote atual de cada festa (public_event_batches já mascara preço e estoque).
   const { data: lotsRes } = useAsync<{ ids: string; map: Record<string, HeroLot | null> }>(async () => {
-    if (!picked?.length || !ticketsAvailable()) return { ids, map: {} };
+    if (!picked?.length) return { ids, map: {} };
     const entries = await Promise.all(
       picked.map(async (e): Promise<[string, HeroLot | null]> => {
         if (!e.has_tickets) return [e.id, null];

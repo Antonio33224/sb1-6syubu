@@ -9,7 +9,6 @@ export default function RecuperarSenhaPage() {
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
-  const [demoLink, setDemoLink] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const submit = async (e: React.FormEvent) => {
@@ -17,8 +16,7 @@ export default function RecuperarSenhaPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await data.requestPasswordReset(email);
-      setDemoLink(res.demoLink ?? null);
+      await data.requestPasswordReset(email);
       setSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao solicitar.');
@@ -35,12 +33,6 @@ export default function RecuperarSenhaPage() {
         {sent ? (
           <div className="mt-8 space-y-4 text-sm text-mute">
             <p>Se houver uma conta com <span className="text-bone">{email}</span>, enviaremos um link para redefinir a senha.</p>
-            {data.mode === 'demo' && (
-              <p className="rounded-card border border-line p-4">
-                Modo demonstração: nenhum e-mail é enviado.{' '}
-                {demoLink ? <Link href={demoLink} className="text-red-bright underline underline-offset-4">Abrir link de redefinição</Link> : 'Nenhuma conta encontrada neste navegador.'}
-              </p>
-            )}
             <Link href="/entrar" className="btn-outline btn-sm">Voltar ao login</Link>
           </div>
         ) : (

@@ -4,7 +4,6 @@ import { useMemo, useState } from 'react';
 import { clsx } from 'clsx';
 import { ArrowRight, CalendarX2, Clock, Disc3, ExternalLink } from 'lucide-react';
 import { Photo } from '@/components/ui/Photo';
-import { DemoTag } from '@/components/ui/States';
 import { formatBRL, formatEventDate } from '@/lib/format';
 import { eventPriceText } from '@/lib/public-events';
 import { byDateTime, relativeDayLabel, weekdayOf, weekWindow, WEEKDAY_LONG, WEEKDAY_SHORT } from '@/lib/week';
@@ -105,9 +104,6 @@ export function WeeklyLineup({ venue, events, nextLater }: { venue: Venue; event
                 ))}
               </ol>
             )}
-            {list.some((e) => e.is_demo) && (
-              <p className="mt-5 text-[11px] text-mute">Programação de exemplo (dados demonstrativos fictícios).</p>
-            )}
           </>
         )}
       </div>
@@ -148,9 +144,7 @@ function FeaturedAttraction({ event, isNext }: { event: Ev; isNext: boolean }) {
             <span className="inline-flex items-center gap-1.5 rounded-sm bg-red px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-nav text-bone">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ink" /> Próxima atração
             </span>
-          )}
-          {event.is_demo && <DemoTag className="bg-ink/70" />}
-        </div>
+          )}        </div>
         <div className="absolute bottom-5 left-5 rounded-sm bg-ink/85 px-3.5 py-2.5 text-center backdrop-blur-sm">
           <p className="font-display text-[30px] font-extrabold leading-none">{d.day}</p>
           <p className="mt-1 text-[9px] font-bold tracking-nav text-red-bright">{d.month}</p>

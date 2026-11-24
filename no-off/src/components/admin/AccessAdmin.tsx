@@ -11,7 +11,7 @@ import { useToast } from '@/components/providers/AppProviders';
 import { FieldError } from '@/components/ui/Controls';
 import { EmptyState, ErrorState, Skeleton } from '@/components/ui/States';
 import { useAsync } from '@/hooks/useAsync';
-import { adminApi, apiAvailable, type AuditEntry } from '@/services/api-client';
+import { adminApi, type AuditEntry } from '@/services/api-client';
 
 function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
   return (
@@ -21,11 +21,6 @@ function Field({ label, children, hint }: { label: string; children: ReactNode; 
       {hint && <span className="mt-1 block text-[11px] text-mute">{hint}</span>}
     </label>
   );
-}
-
-function SupabaseOnly({ children }: { children: ReactNode }) {
-  if (apiAvailable()) return <>{children}</>;
-  return <EmptyState title="Disponível apenas com Supabase" text="Auditoria e alertas de segurança exigem o banco de dados real. No modo demonstração esta área fica desativada." />;
 }
 
 const dateTime = (iso: string | null) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
@@ -60,11 +55,7 @@ const ACTION_LABEL: Record<string, string> = {
 };
 
 export function AuditAdmin() {
-  return (
-    <SupabaseOnly>
-      <AuditInner />
-    </SupabaseOnly>
-  );
+  return <AuditInner />;
 }
 
 function AuditInner() {
@@ -139,11 +130,7 @@ function AuditInner() {
 // ------------------------------------------------------------------ segurança
 
 export function SecurityAdmin() {
-  return (
-    <SupabaseOnly>
-      <SecurityInner />
-    </SupabaseOnly>
-  );
+  return <SecurityInner />;
 }
 
 function SecurityInner() {

@@ -90,7 +90,7 @@ function pickBatch(list: PublicBatch[]): PublicBatch | undefined {
  * - prefere um lote à venda (Pista primeiro, depois o mais barato);
  * - sem lote à venda, mostra o próximo que ainda pode abrir;
  * - nada à venda nem para abrir → esgotado (lista de espera).
- * Sem lotes (modo demo, link externo) → null: o hero usa o preço do evento.
+ * Sem lotes (link externo) → null: o hero usa o preço do evento.
  */
 export function currentLot(batches: PublicBatch[] | null | undefined): HeroLot | null {
   if (!batches || batches.length === 0) return null;

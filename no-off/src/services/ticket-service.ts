@@ -6,12 +6,10 @@
  * security definer (owns_event, reserve_order, checkin_*, producer_*) decidem
  * o que cada papel pode ver/alterar. Operações com dinheiro (reserva,
  * pagamento, emissão) passam pelas rotas /api (ver api-client.ts).
- * No modo demonstração estas funções não estão disponíveis.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getDataService } from './index';
 import { ServiceError } from './data-service';
-import { SupabaseService } from './supabase-service';
 import { mapPublicEvent, PUBLIC_EVENT_COLUMNS } from '@/lib/public-events';
 import type {
   AttendeeHit,
@@ -30,12 +28,8 @@ import type {
   VipLink,
 } from '@/types';
 
-export const ticketsAvailable = () => getDataService() instanceof SupabaseService;
-
 function sb(): SupabaseClient {
-  const d = getDataService();
-  if (!(d instanceof SupabaseService)) throw new ServiceError('Venda de ingressos disponível apenas com o Supabase configurado.');
-  return d.client;
+  return getDataService().client;
 }
 
 function fail(error: { message: string } | null): asserts error is null {

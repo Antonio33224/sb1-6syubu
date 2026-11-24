@@ -1,6 +1,6 @@
 'use client';
 import { Suspense, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useApp, useToast } from '@/components/providers/AppProviders';
 import { FieldError } from '@/components/ui/Controls';
 
@@ -13,11 +13,9 @@ export default function RedefinirSenhaPage() {
 }
 
 function ResetForm() {
-  const params = useSearchParams();
   const router = useRouter();
   const { data } = useApp();
   const toast = useToast();
-  const token = params.get('token') ?? undefined;
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
@@ -30,7 +28,7 @@ function ResetForm() {
     setError(null);
     try {
       // Supabase: a sessão de recuperação vem do link do e-mail (detectSessionInUrl).
-      await data.updatePassword(password, token);
+      await data.updatePassword(password);
       toast('Senha atualizada.');
       router.replace('/entrar');
     } catch (err) {

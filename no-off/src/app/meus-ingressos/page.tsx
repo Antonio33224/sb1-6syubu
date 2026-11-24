@@ -10,7 +10,7 @@ import { Modal, Tabs } from '@/components/ui/Controls';
 import { EmptyState, ErrorState, Skeleton } from '@/components/ui/States';
 import { useAsync } from '@/hooks/useAsync';
 import { brlCents, formatEventDate } from '@/lib/format';
-import { ticketService, ticketsAvailable, type MyTicket } from '@/services/ticket-service';
+import { ticketService, type MyTicket } from '@/services/ticket-service';
 import { ORDER_STATUS_LABEL, TICKET_TYPE_LABEL } from '@/types';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -25,12 +25,11 @@ export default function MeusIngressosPage() {
     if (authReady && !user) router.replace('/entrar?next=/meus-ingressos');
   }, [authReady, user, router]);
 
-  const enabled = ticketsAvailable();
   const { data, error, reload } = useAsync(async () => {
-    if (!user || !enabled) return null;
+    if (!user) return null;
     const [tickets, orders] = await Promise.all([ticketService.myTickets(), ticketService.myOrders()]);
     return { tickets, orders };
-  }, [user?.id, enabled]);
+  }, [user?.id]);
 
   const list = useMemo(() => {
     if (!data) return [];
@@ -38,8 +37,6 @@ export default function MeusIngressosPage() {
     return data.tickets.filter((x) => (tab === 'passados' ? (x.event?.event_date ?? '') < t : (x.event?.event_date ?? t) >= t));
   }, [data, tab]);
 
-  if (!enabled)
-    return <div className="container-site py-24"><EmptyState title="Indisponível no modo demonstração" text="Os ingressos exigem o Supabase configurado." action={{ href: '/eventos', label: 'Ver a agenda' }} /></div>;
   if (!authReady || !user) return <div className="container-site py-16"><Skeleton className="h-80" /></div>;
 
   return (

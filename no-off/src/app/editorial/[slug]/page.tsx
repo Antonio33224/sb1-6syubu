@@ -41,7 +41,6 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
           {article.body.map((p, i) => (
             <p key={i} className="mt-7 text-[17px] leading-[1.75] text-bone/80">{p}</p>
           ))}
-          <p className="mt-12 border-t border-line pt-6 text-[11px] text-mute">Texto editorial de demonstração.</p>
         </div>
         <div className="mt-20">
           <p className="eyebrow mb-6">Continue lendo</p>

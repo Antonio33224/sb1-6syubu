@@ -10,19 +10,17 @@ import { useAsync } from '@/hooks/useAsync';
 import { formatEventDate } from '@/lib/format';
 import { formatCpf, formatPhone, isFullName, isValidCpf, onlyDigits } from '@/lib/cpf';
 import { HIDDEN_TEXT } from '@/lib/public-events';
-import { ticketsAvailable, vipPublicService } from '@/services/ticket-service';
+import { vipPublicService } from '@/services/ticket-service';
 
 /** Inscrição pública na lista VIP — entra como pendente até o produtor aprovar. */
 export default function ListaVipPage() {
   const { token } = useParams<{ token: string }>();
-  const enabled = ticketsAvailable();
-  const { data, loading } = useAsync(async () => (enabled ? vipPublicService.link(token) : null), [token, enabled]);
+  const { data, loading } = useAsync(() => vipPublicService.link(token), [token]);
   const [f, setF] = useState({ name: '', email: '', phone: '', cpf: '' });
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  if (!enabled) return <div className="container-site py-24"><EmptyState title="Indisponível no modo demonstração" /></div>;
   if (loading) return <div className="container-site py-16"><Skeleton className="h-96" /></div>;
   if (!data) return <div className="container-site py-24"><EmptyState title="Link inválido" text="Esta lista não existe ou foi removida." action={{ href: '/eventos', label: 'Ver a agenda' }} /></div>;
 

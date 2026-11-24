@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { ArrowRight, MapPin, Music2 } from 'lucide-react';
 import { Carousel } from '@/components/ui/Carousel';
 import { Photo } from '@/components/ui/Photo';
-import { DemoTag, EmptyState, Skeleton } from '@/components/ui/States';
+import { EmptyState, Skeleton } from '@/components/ui/States';
 import { formatBRL, formatEventDate } from '@/lib/format';
 import { eventPriceText } from '@/lib/public-events';
 import { byDateTime, relativeDayLabel, weekWindow } from '@/lib/week';
@@ -60,9 +60,7 @@ function EventBanner({ event, priority }: { event: HomeEvent; priority?: boolean
           <p className="mt-1 text-[9px] font-bold tracking-nav text-red-bright">{d.month}</p>
         </div>
         <div className="flex items-center gap-2">
-          {inWeek && <span className="rounded-sm bg-red px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-nav text-bone">{relativeDayLabel(event.event_date)}</span>}
-          {event.is_demo && <DemoTag className="bg-ink/70" />}
-        </div>
+          {inWeek && <span className="rounded-sm bg-red px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-nav text-bone">{relativeDayLabel(event.event_date)}</span>}        </div>
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 p-5 sm:p-7">

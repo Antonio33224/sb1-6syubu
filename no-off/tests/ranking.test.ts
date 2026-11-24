@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { computeOverall } from '../src/lib/rating';
 import { computeRankings, computeVenueStats, DEFAULT_SETTINGS, isApproved } from '../src/lib/ranking';
 import { levelFor } from '../src/lib/levels';
-import { buildDemoDatabase } from '../src/data/demo-seed';
 import type { Venue, VenueReview } from '../src/types';
 
 const NOW = Date.UTC(2026, 10, 14);
@@ -90,15 +89,4 @@ test('níveis de usuário', () => {
   assert.equal(levelFor(5)?.name, 'Night Explorer');
   assert.equal(levelFor(15)?.name, 'Night Expert');
   assert.equal(levelFor(30)?.name, 'Night Legend');
-});
-
-test('dados demo: determinísticos, marcados como demo e com uma avaliação por usuário/local', () => {
-  const a = buildDemoDatabase(NOW);
-  const b = buildDemoDatabase(NOW);
-  assert.deepEqual(a.reviews.map((r) => r.overall_rating), b.reviews.map((r) => r.overall_rating));
-  assert.ok(a.reviews.every((r) => r.is_demo) && a.venues.every((v) => v.is_demo));
-  const keys = new Set(a.reviews.map((r) => `${r.user_id}:${r.venue_id}`));
-  assert.equal(keys.size, a.reviews.length);
-  const top = computeRankings({ venues: a.venues, reviews: a.reviews, likes: a.likes, settings: a.settings, now: NOW }, { limit: 3 });
-  assert.deepEqual(top.map((r) => r.venue.slug), ['the-night-edition', 'summer-experience', 'rave-in-the-jungle']);
 });

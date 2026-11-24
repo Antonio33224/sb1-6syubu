@@ -5,7 +5,7 @@ import { BrandMark } from '@/components/brand/ApprovedSeal';
 import { Avatar } from '@/components/ui/Avatar';
 import { Photo } from '@/components/ui/Photo';
 import { Score } from '@/components/ui/Score';
-import { DemoTag, EmptyState, Skeleton } from '@/components/ui/States';
+import { EmptyState, Skeleton } from '@/components/ui/States';
 import { formatDate } from '@/lib/format';
 import type { ReviewWithMeta } from '@/types';
 import { HomeSectionTitle } from './HomeSectionTitle';
@@ -81,7 +81,6 @@ function ReviewTile({ item, featured }: { item: ReviewWithMeta; featured: boolea
           </Link>
           <span className="flex shrink-0 items-center gap-2 text-[11px] text-mute">
             <time dateTime={review.created_at}>{formatDate(review.created_at)}</time>
-            {review.is_demo && <DemoTag />}
           </span>
         </div>
       </div>

@@ -5,7 +5,7 @@ import { ArrowDown, ArrowUp, MapPin } from 'lucide-react';
 import { ApprovedBadge } from '@/components/brand/ApprovedSeal';
 import { Photo } from '@/components/ui/Photo';
 import { Score } from '@/components/ui/Score';
-import { DemoTag, EmptyState, Skeleton } from '@/components/ui/States';
+import { EmptyState, Skeleton } from '@/components/ui/States';
 import { PriceTag } from '@/components/venue/PriceDisplay';
 import type { RankingRow } from '@/types';
 import { HomeSectionTitle } from './HomeSectionTitle';
@@ -69,9 +69,7 @@ function VenueTile({ row, big, index }: { row: RankingRow; big: boolean; index: 
           {String(position).padStart(2, '0')}
         </span>
         <div className="mt-2 flex flex-col items-start gap-2">
-          <RankIndicator change={change} />
-          {venue.is_demo && <DemoTag className="bg-ink/60" />}
-        </div>
+          <RankIndicator change={change} />        </div>
       </div>
       {venue.approved && <ApprovedBadge compact className="absolute right-4 top-4 sm:right-5 sm:top-5" />}
 

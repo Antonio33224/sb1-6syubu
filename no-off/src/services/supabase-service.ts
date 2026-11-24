@@ -86,7 +86,6 @@ const mapReview = (r: Record<string, unknown>): VenueReview => {
 };
 
 export class SupabaseService implements DataService {
-  readonly mode = 'supabase' as const;
   private sb: SupabaseClient;
   private settingsCache: PlatformSettings | null = null;
 
@@ -194,7 +193,6 @@ export class SupabaseService implements DataService {
     const site = process.env.NEXT_PUBLIC_SITE_URL || location.origin;
     const { error } = await this.sb.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${site}/redefinir-senha` });
     fail(error);
-    return {};
   }
 
   async updatePassword(password: string) {

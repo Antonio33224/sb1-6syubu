@@ -28,12 +28,6 @@ export default function SobrePage() {
       <p>
         Produtores criam as próprias festas, configuram lotes, lista VIP e fazem o check-in na portaria pelo <Link href="/produtor">Painel do produtor</Link>.
       </p>
-      <h2 id="demonstracao">Modo demonstração</h2>
-      <p>
-        Quando o projeto roda sem um banco Supabase configurado, o site funciona em modo demonstração: casas, eventos, usuários e avaliações são
-        fictícios e tudo o que você cria fica salvo apenas neste navegador. A compra de ingressos fica desativada nesse modo. Contas de teste:{' '}
-        <code>demo@nooff.demo</code> e <code>admin@nooff.demo</code>, senha <code>nooff123</code>.
-      </p>
     </StaticPage>
   );
 }

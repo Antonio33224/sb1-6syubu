@@ -5,7 +5,7 @@ import { clsx } from 'clsx';
 import { ArrowRight, Clock, MapPin } from 'lucide-react';
 import { Carousel } from '@/components/ui/Carousel';
 import { Photo } from '@/components/ui/Photo';
-import { DemoTag, Skeleton } from '@/components/ui/States';
+import { Skeleton } from '@/components/ui/States';
 import { formatEventDate } from '@/lib/format';
 import { byDateTime, relativeDayLabel, weekdayOf, weekWindow, WEEKDAY_SHORT } from '@/lib/week';
 import { HomeSectionTitle } from './HomeSectionTitle';
@@ -83,9 +83,7 @@ function ArtistCard({ event }: { event: HomeEvent }) {
         <div className="absolute left-4 top-4 flex flex-wrap items-center gap-2">
           <span className="rounded-sm bg-ink/85 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-nav text-red-bright backdrop-blur-sm">
             {relativeDayLabel(event.event_date)}
-          </span>
-          {event.is_demo && <DemoTag className="bg-ink/70" />}
-        </div>
+          </span>        </div>
         <div className="absolute inset-x-0 bottom-0 p-5">
           <h3 className="font-display text-[26px] font-extrabold uppercase leading-[0.92] tracking-tight transition-colors group-hover:text-red-bright">{headliner}</h3>
           {others.length > 0 && <p className="mt-1.5 truncate text-[11px] font-semibold uppercase tracking-nav text-bone/60">+ {others.join(' · ')}</p>}

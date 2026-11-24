@@ -15,7 +15,6 @@ import type {
   UserRole,
 } from '@/types';
 import { getDataService } from './index';
-import { SupabaseService } from './supabase-service';
 
 export class ApiError extends Error {
   constructor(
@@ -27,12 +26,8 @@ export class ApiError extends Error {
   }
 }
 
-export const apiAvailable = () => getDataService() instanceof SupabaseService;
-
 export async function accessToken(): Promise<string | null> {
-  const data = getDataService();
-  if (!(data instanceof SupabaseService)) return null;
-  const { data: s } = await data.client.auth.getSession();
+  const { data: s } = await getDataService().client.auth.getSession();
   return s.session?.access_token ?? null;
 }
 
@@ -40,7 +35,7 @@ export async function api<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   const headers: Record<string, string> = {};
   if (opts.auth !== false) {
     const t = await accessToken();
-    if (!t) throw new ApiError(apiAvailable() ? 'Entre na sua conta para continuar.' : 'Disponível apenas com o banco de dados (Supabase) configurado.', 401, 'unauthenticated');
+    if (!t) throw new ApiError('Entre na sua conta para continuar.', 401, 'unauthenticated');
     headers.authorization = `Bearer ${t}`;
   }
   if (body !== undefined) headers['content-type'] = 'application/json';

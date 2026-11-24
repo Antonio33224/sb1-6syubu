@@ -5,7 +5,6 @@ import '@/styles/globals.css';
 import { AppProviders } from '@/components/providers/AppProviders';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
-import { DemoBadge } from '@/components/layout/DemoBadge';
 import { palette } from '@/lib/theme';
 import { SITE_NAME, SLOGAN } from '@/lib/brand';
 
@@ -39,7 +38,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Header />
           <main className="min-h-[60vh]">{children}</main>
           <Footer />
-          <DemoBadge />
         </AppProviders>
       </body>
     </html>

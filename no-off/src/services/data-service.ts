@@ -25,20 +25,15 @@ import type {
 } from '@/types';
 import type { ImportResult, ReviewImportRow } from '@/lib/review-import';
 
-export type DataMode = 'demo' | 'supabase';
-
 export class ServiceError extends Error {}
 
 export type ImageBucket = 'avatars' | 'review-photos' | 'venue-images' | 'event-images';
 
 /**
- * Contrato único consumido pela interface. Duas implementações:
- *  - DemoService: banco local (localStorage) com dados demonstrativos.
- *  - SupabaseService: Postgres + Auth + Storage com RLS.
+ * Contrato consumido pela interface. Implementação: SupabaseService
+ * (Postgres + Auth + Storage com RLS).
  */
 export interface DataService {
-  readonly mode: DataMode;
-
   // ---- auth
   getCurrentUser(): Promise<Profile | null>;
   onAuthChange(cb: (p: Profile | null) => void): () => void;
@@ -50,8 +45,8 @@ export interface DataService {
   /** Envia o código SMS (OTP) para o celular em formato E.164 (+55...). */
   sendPhoneOtp(phone: string): Promise<void>;
   verifyPhoneOtp(phone: string, code: string): Promise<Profile>;
-  requestPasswordReset(email: string): Promise<{ demoLink?: string }>;
-  updatePassword(password: string, token?: string): Promise<void>;
+  requestPasswordReset(email: string): Promise<void>;
+  updatePassword(password: string): Promise<void>;
 
   // ---- venues
   listVenues(filter?: VenueFilter): Promise<Venue[]>;
@@ -113,7 +108,7 @@ export interface DataService {
     listNewsletter(): Promise<NewsletterEntry[]>;
     deleteNewsletter(id: string): Promise<void>;
     updateSettings(s: PlatformSettings): Promise<void>;
+    /** Apaga registros is_demo que tenham sido carregados no banco por seeds antigos. */
     removeDemoData(): Promise<void>;
-    resetDemo?(): Promise<void>;
   };
 }

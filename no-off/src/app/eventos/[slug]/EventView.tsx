@@ -7,7 +7,7 @@ import { Photo } from '@/components/ui/Photo';
 import { Score, ReviewCount } from '@/components/ui/Score';
 import { Avatar } from '@/components/ui/Avatar';
 import { FavoriteButton, ShareButton } from '@/components/actions/Actions';
-import { DemoTag, EmptyState, Skeleton } from '@/components/ui/States';
+import { EmptyState, Skeleton } from '@/components/ui/States';
 import { FieldError } from '@/components/ui/Controls';
 import { TicketSelector } from '@/components/tickets/TicketSelector';
 import { useAsync } from '@/hooks/useAsync';
@@ -58,7 +58,6 @@ export function EventView({ slug }: { slug: string }) {
         <div className="container-site flex min-h-[520px] flex-col justify-end py-12 sm:py-16">
           <div className="flex items-center gap-3">
             <span className="eyebrow text-bone/80">{isPast ? 'Edição encerrada' : 'Próximo evento'}</span>
-            {event.is_demo && <DemoTag />}
           </div>
           <h1 className="mt-5 max-w-4xl font-display text-[44px] font-extrabold uppercase leading-[0.92] tracking-tight sm:text-[72px] lg:text-[88px]">{event.name}</h1>
           <div className="mt-7 flex flex-wrap gap-x-8 gap-y-3 text-[12px] font-semibold uppercase tracking-nav text-bone/80">
@@ -85,7 +84,7 @@ export function EventView({ slug }: { slug: string }) {
         </div>
       </section>
 
-      {!isPast && (event.has_tickets || data.mode === 'demo') && (
+      {!isPast && event.has_tickets && (
         <section id="ingressos" className="scroll-mt-24 border-b border-line">
           <div className="container-site py-12 sm:py-16">
             <TicketSelector event={event} />
@@ -181,7 +180,6 @@ export function EventView({ slug }: { slug: string }) {
                       <Score value={review.rating} size="sm" />
                     </div>
                     {review.comment && <p className="mt-4 text-[14px] leading-relaxed text-bone/85">{review.comment}</p>}
-                    {review.is_demo && <DemoTag className="mt-3" />}
                   </article>
                 ))
               )}

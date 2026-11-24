@@ -19,7 +19,7 @@ export function PriceTag({ venue, className, tone = 'solid' }: { venue: Venue; c
         tone === 'glass' ? 'border-red/35 bg-ink/70 backdrop-blur-md' : 'border-red/30 bg-red-soft',
         className,
       )}
-      title={has ? `Média estimada por pessoa${venue.is_demo ? ' (valor demonstrativo)' : ''}` : 'Média de preço ainda não informada'}
+      title={has ? 'Média estimada por pessoa' : 'Média de preço ainda não informada'}
     >
       <span className="text-[8px] font-bold uppercase tracking-nav text-red-bright/90">Média</span>
       {has ? (
@@ -50,11 +50,6 @@ export function PricePanel({ venue, className }: { venue: Venue; className?: str
       <div className="relative p-6 sm:p-8">
         <div className="flex items-center justify-between gap-3">
           <p className="text-[10px] font-extrabold uppercase tracking-wide2 text-red-bright">Média de preços</p>
-          {venue.is_demo && (has || rows.length > 0) && (
-            <span className="rounded-sm border border-line px-1.5 py-[1px] text-[8px] font-bold uppercase tracking-nav text-mute" title="Valores fictícios de demonstração">
-              Valor demonstrativo
-            </span>
-          )}
         </div>
 
         {has ? (

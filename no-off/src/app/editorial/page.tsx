@@ -40,7 +40,6 @@ export default function EditorialPage() {
             </Link>
           ))}
         </div>
-        <p className="mt-10 text-[11px] text-mute">Textos editoriais de demonstração.</p>
       </section>
     </>
   );

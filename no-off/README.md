@@ -12,7 +12,7 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-Sem variáveis de ambiente o site sobe em **modo demonstração**: catálogo, rankings e avaliações com dados fictícios salvos no navegador. A **compra de ingressos fica desativada** nesse modo.
+O **Supabase é obrigatório**: sem `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` no `.env.local` o site mostra apenas um aviso de configuração ausente.
 
 | Script | O que faz |
 | --- | --- |
@@ -21,8 +21,6 @@ Sem variáveis de ambiente o site sobe em **modo demonstração**: catálogo, ra
 | `npm run typecheck` | Checagem de tipos |
 | `npm run lint` | ESLint (`--max-warnings=0`) |
 | `npm test` | Testes (node:test): rankings, avaliações, checkout, webhook, CPF, relatórios, rotas admin |
-| `npm run db:seed-sql` | Regenera `supabase/seed.sql` (dados demo + lotes de teste) |
-
 ## Papéis
 
 | Papel (`profiles.role`) | O que faz |
@@ -57,7 +55,7 @@ A interface só esconde o que o usuário não pode usar.
    | `0006_ticketing.sql` | Ingressos: lotes, pedidos, reserva, pagamentos, webhooks, ingressos com QR, lista VIP, check-in, visibilidade, relatórios, suspensão, view pública |
 
    Todas as migrações são idempotentes (podem ser executadas de novo).
-3. (Opcional) Rode `npm run db:seed-sql` e execute `supabase/seed.sql`. Ele carrega dados demonstrativos e **lotes de teste** nos eventos futuros, para testar o checkout no sandbox. Para remover: `select public.remove_demo_data();`.
+3. Se o banco tiver dados demonstrativos de um seed antigo, remova com `select public.remove_demo_data();` (ou em `/admin → Configurações → Remover dados demo`).
 4. Crie sua conta no site e rode `scripts/promote-admin.sql` (troque o e-mail) para virar **super admin**. Depois, promova produtores em `/admin → Usuários` (papel "Produtor").
 5. Em **Authentication → URL Configuration**:
    - **Site URL**: `https://seu-dominio.com.br`.
@@ -249,7 +247,7 @@ src/
   components/            brand, layout, home, cards, tickets, producer, admin, reviews, ui…
   lib/                   ranking, rating, cpf, public-events, vip-csv, brand, theme
   lib/server/            auth, mercadopago, tickets/{handlers,emails}, platform, reports, mailer, admin
-  services/              DataService (demo/Supabase), ticket-service, api-client
+  services/              DataService (Supabase), ticket-service, api-client
 supabase/migrations/     0001–0006
 tests/                   node:test
 ```

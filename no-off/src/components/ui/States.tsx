@@ -45,17 +45,6 @@ export function PreLaunchTag({ className }: { className?: string }) {
   );
 }
 
-export function DemoTag({ className }: { className?: string }) {
-  return (
-    <span
-      title="Conteúdo demonstrativo — dado fictício"
-      className={clsx('inline-flex items-center rounded-sm border border-line px-1.5 py-[1px] text-[8px] font-bold uppercase tracking-nav text-mute', className)}
-    >
-      Demo
-    </span>
-  );
-}
-
 export function PageIntro({ eyebrow, title, subtitle, children, image }: { eyebrow?: string; title: ReactNode; subtitle?: string; children?: ReactNode; image?: string }) {
   return (
     <section className="relative overflow-hidden border-b border-line">

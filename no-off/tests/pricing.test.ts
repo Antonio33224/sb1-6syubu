@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { formatRange, hasAvgPrice, normalizePrices, priceBreakdown, validatePrices } from '../src/lib/pricing';
-import { buildDemoDatabase, DEMO_PRICES } from '../src/data/demo-seed';
 import { byDateTime, weekWindow } from '../src/lib/week';
 import type { Venue } from '../src/types';
 
@@ -29,22 +28,14 @@ test('validação: negativos e mínimo maior que máximo são rejeitados', () =>
   assert.equal(validatePrices({ avg_price: null }), null);
 });
 
-test('dados demo: preços só onde definidos; demais ficam "não informado"', () => {
-  const db = buildDemoDatabase(Date.UTC(2026, 10, 14, 15));
-  for (const v of db.venues) {
-    if (DEMO_PRICES[v.slug]) assert.equal(v.avg_price, DEMO_PRICES[v.slug]![0]);
-    else assert.equal(v.avg_price, null);
-    assert.ok(v.is_demo);
-  }
-  assert.ok(db.venues.some((v) => v.avg_price === null), 'deve existir ao menos uma casa sem preço para o estado vazio');
-});
-
-test('atrações da semana: cada evento pertence a uma única casa e IDs são únicos', () => {
-  const db = buildDemoDatabase(Date.UTC(2026, 10, 14, 15));
-  const venueIds = new Set(db.venues.map((v) => v.id));
-  assert.equal(new Set(db.events.map((e) => e.id)).size, db.events.length);
-  for (const e of db.events) assert.ok(e.venue_id && venueIds.has(e.venue_id));
-  const sorted = [...db.events].sort(byDateTime);
+test('atrações da semana: ordenação por data/hora e janela de 7 dias', () => {
+  const events = [
+    { event_date: '2026-11-16', start_time: '23:00' },
+    { event_date: '2026-11-14', start_time: '22:00' },
+    { event_date: '2026-11-14', start_time: '20:00' },
+  ];
+  const sorted = [...events].sort(byDateTime);
+  assert.deepEqual(sorted.map((e) => `${e.event_date} ${e.start_time}`), ['2026-11-14 20:00', '2026-11-14 22:00', '2026-11-16 23:00']);
   for (let i = 1; i < sorted.length; i++) assert.ok(byDateTime(sorted[i - 1]!, sorted[i]!) <= 0);
   const w = weekWindow(new Date(2026, 10, 14, 12));
   assert.equal(w.days.length, 7);

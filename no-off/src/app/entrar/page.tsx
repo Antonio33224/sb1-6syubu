@@ -6,7 +6,6 @@ import { clsx } from 'clsx';
 import { useApp, useToast } from '@/components/providers/AppProviders';
 import { FieldError } from '@/components/ui/Controls';
 import { Logo } from '@/components/brand/Logo';
-import { DEMO_ADMIN_EMAIL, DEMO_PASSWORD, DEMO_USER_EMAIL } from '@/data/demo-seed';
 import { slugify } from '@/lib/format';
 import { SLOGAN } from '@/lib/brand';
 import { formatPhone, toE164 } from '@/lib/cpf';
@@ -129,8 +128,7 @@ function AuthScreen() {
             {mode === 'login' ? `${SLOGAN}.` : 'Ingressos, rankings, avaliações e favoritos em um só lugar.'}
           </p>
 
-          {data.mode === 'supabase' && (
-            <div className="mt-8 flex flex-col gap-3">
+          <div className="mt-8 flex flex-col gap-3">
               <button type="button" onClick={google} className="btn-outline w-full">
                 <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true"><path fill="currentColor" d="M21.35 11.1H12v2.98h5.35c-.23 1.44-1.66 4.22-5.35 4.22-3.22 0-5.85-2.67-5.85-5.95S8.78 6.4 12 6.4c1.83 0 3.06.78 3.76 1.45l2.56-2.47C16.68 3.85 14.55 2.9 12 2.9 6.98 2.9 2.9 6.98 2.9 12s4.08 9.1 9.1 9.1c5.25 0 8.73-3.69 8.73-8.89 0-.6-.07-1.05-.15-1.51z" /></svg>
                 Continuar com Google
@@ -138,10 +136,9 @@ function AuthScreen() {
               <button type="button" onClick={() => { setMethod(method === 'celular' ? 'email' : 'celular'); setError(null); setInfo(null); }} className="btn-ghost w-full">
                 {method === 'celular' ? 'Usar e-mail e senha' : 'Entrar com celular (código por SMS)'}
               </button>
-            </div>
-          )}
+          </div>
 
-          {method === 'celular' && data.mode === 'supabase' ? (
+          {method === 'celular' ? (
             <form onSubmit={sendOtp} className="mt-8 flex flex-col gap-5" noValidate>
               <div>
                 <label htmlFor="phone" className="field-label">Celular</label>
@@ -215,17 +212,6 @@ function AuthScreen() {
             )}
           </form>
           </>)}
-
-          {data.mode === 'demo' && (
-            <div className="mt-10 rounded-card border border-line p-5 text-[12px] leading-relaxed text-mute">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-nav text-bone">Modo demonstração</p>
-              Sem Supabase configurado: as contas ficam salvas só neste navegador. Contas de teste (senha <span className="text-bone">{DEMO_PASSWORD}</span>):
-              <ul className="mt-2 space-y-1">
-                <li><span className="text-bone">{DEMO_USER_EMAIL}</span> — usuário</li>
-                <li><span className="text-bone">{DEMO_ADMIN_EMAIL}</span> — super admin</li>
-              </ul>
-            </div>
-          )}
         </div>
       </div>
     </section>

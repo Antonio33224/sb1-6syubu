@@ -15,7 +15,7 @@ import { ApprovedBadge } from '@/components/brand/ApprovedSeal';
 import { FavoriteButton, ShareButton } from '@/components/actions/Actions';
 import { ReviewCard } from '@/components/cards/ReviewCard';
 import { EventCard } from '@/components/cards/EventCard';
-import { DemoTag, EmptyState, Skeleton } from '@/components/ui/States';
+import { EmptyState, Skeleton } from '@/components/ui/States';
 import { Tabs } from '@/components/ui/Controls';
 import { useAsync } from '@/hooks/useAsync';
 import { CATEGORY_LABEL, formatBRL, formatEventDate, priceLabel } from '@/lib/format';
@@ -95,7 +95,6 @@ export default function VenuePage() {
           <div className="flex flex-wrap items-center gap-3">
             <span className="eyebrow text-bone/80">{CATEGORY_LABEL[venue.category]}</span>
             {venue.approved && <ApprovedBadge />}
-            {venue.is_demo && <DemoTag />}
           </div>
           <h1 className="mt-5 max-w-4xl animate-fade-up font-display text-[48px] font-extrabold uppercase leading-[0.9] tracking-tight sm:text-[80px] lg:text-[104px]">
             {venue.name}
@@ -113,7 +112,7 @@ export default function VenuePage() {
               {hasAvgPrice(venue) ? (
                 <>
                   <p className="mt-2 font-display text-[44px] font-extrabold leading-none tracking-tight text-red-bright sm:text-[56px]">{brl(venue.avg_price)}</p>
-                  <p className="mt-2 text-[11px] font-semibold uppercase tracking-nav text-bone/70">Por pessoa{venue.is_demo ? ' · exemplo' : ''}</p>
+                  <p className="mt-2 text-[11px] font-semibold uppercase tracking-nav text-bone/70">Por pessoa</p>
                 </>
               ) : (
                 <>

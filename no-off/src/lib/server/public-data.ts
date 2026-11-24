@@ -13,18 +13,14 @@ export function anonServerClient() {
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-export type PublicEventLookup =
-  | { mode: 'demo' }
-  | { mode: 'supabase'; row: Record<string, unknown> | null };
-
-/** Festa pública pela slug pública (ou id quando o nome está oculto). */
-export async function findPublicEvent(slug: string): Promise<PublicEventLookup> {
+/** Festa pública pela slug pública (ou id quando o nome está oculto). null = não existe/oculta. */
+export async function findPublicEvent(slug: string): Promise<Record<string, unknown> | null> {
   const db = anonServerClient();
-  if (!db) return { mode: 'demo' };
-  if (!/^[a-z0-9-]{1,140}$/i.test(slug)) return { mode: 'supabase', row: null };
+  if (!db) throw new Error('Supabase não configurado (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY).');
+  if (!/^[a-z0-9-]{1,140}$/i.test(slug)) return null;
   const { data, error } = await db.from('public_events').select(PUBLIC_EVENT_COLUMNS).eq('slug', slug).maybeSingle();
   if (error) throw new Error(`public_events: ${error.message}`);
-  return { mode: 'supabase', row: (data as unknown as Record<string, unknown>) ?? null };
+  return (data as unknown as Record<string, unknown>) ?? null;
 }
 
 export async function listPublicSitemap(): Promise<{ events: { slug: string; created_at: string }[]; venues: { slug: string; created_at: string }[] }> {

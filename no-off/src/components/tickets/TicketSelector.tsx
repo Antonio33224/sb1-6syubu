@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/States';
 import { useAsync } from '@/hooks/useAsync';
 import { brlCents, formatDate } from '@/lib/format';
 import { HIDDEN_TEXT } from '@/lib/public-events';
-import { ticketService, ticketsAvailable } from '@/services/ticket-service';
+import { ticketService } from '@/services/ticket-service';
 import { BATCH_STATE_LABEL, TICKET_TYPE_LABEL, type EventWithVenue, type PublicBatch, type TicketType } from '@/types';
 
 const TYPE_ORDER: TicketType[] = ['pista', 'meia', 'vip', 'camarote', 'outro'];
@@ -19,9 +19,7 @@ export function TicketSelector({ event }: { event: EventWithVenue }) {
   const { user } = useApp();
   const router = useRouter();
   const [qty, setQty] = useState<Record<string, number>>({});
-  const enabled = ticketsAvailable();
-
-  const { data: batches, error } = useAsync(async () => (enabled ? ticketService.batches(event.id) : []), [event.id, enabled]);
+  const { data: batches, error } = useAsync(() => ticketService.batches(event.id), [event.id]);
 
   const groups = useMemo(() => {
     const by = new Map<TicketType, PublicBatch[]>();
@@ -54,11 +52,7 @@ export function TicketSelector({ event }: { event: EventWithVenue }) {
       <div>
         <p className="eyebrow text-red-bright">Ingressos</p>
         <h2 className="section-title mt-3">Escolha seu lote</h2>
-        {!enabled ? (
-          <p className="mt-6 max-w-lg text-[13px] text-mute">
-            A compra de ingressos fica desativada no modo demonstração. Configure o Supabase e o Mercado Pago (veja o README) para vender ingressos.
-          </p>
-        ) : error ? (
+        {error ? (
           <p className="mt-6 text-sm text-mute">Não foi possível carregar os lotes agora.</p>
         ) : !batches ? (
           <div className="mt-8 flex flex-col gap-3">{[0, 1].map((i) => <Skeleton key={i} className="h-20" />)}</div>
@@ -118,7 +112,7 @@ export function TicketSelector({ event }: { event: EventWithVenue }) {
           <p className="eyebrow">Resumo</p>
           <p className="mt-4 font-display text-[40px] font-extrabold leading-none">{brlCents(total)}</p>
           <p className="mt-2 text-[12px] text-mute">{count ? `${count} ${count === 1 ? 'ingresso' : 'ingressos'}` : 'Selecione ao menos um ingresso'} · máx. {MAX_PER_ORDER} por pedido</p>
-          <button onClick={proceed} disabled={!count || !enabled} className="btn-primary mt-6 w-full"><Ticket className="h-4 w-4" /> Continuar</button>
+          <button onClick={proceed} disabled={!count} className="btn-primary mt-6 w-full"><Ticket className="h-4 w-4" /> Continuar</button>
           <ul className="mt-6 flex flex-col gap-2 text-[11px] text-mute">
             <li className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-bright" /> Pagamento pelo Mercado Pago: Pix, cartão de crédito (parcelado) ou boleto.</li>
             <li className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-bright" /> Seus ingressos ficam reservados por 10 minutos durante o pagamento.</li>

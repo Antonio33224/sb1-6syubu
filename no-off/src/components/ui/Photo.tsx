@@ -3,7 +3,7 @@ import { clsx } from 'clsx';
 
 /**
  * Fotografia editorial com tratamento P&B de alto contraste.
- * Usa <img> nativo para aceitar imagens locais, do Supabase Storage e data URLs (modo demo).
+ * Usa <img> nativo para aceitar imagens locais, do Supabase Storage e data URLs.
  */
 export function Photo({
   src,
