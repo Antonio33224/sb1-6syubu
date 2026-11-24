@@ -1,0 +1,11 @@
+{
+  "name": "NO OFF",
+  "short_name": "NO OFF",
+  "description": "Uma nova forma de adquirir experiências noturnas",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#050505",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
