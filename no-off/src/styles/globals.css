@@ -1,0 +1,334 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  /* Fontes auto-hospedadas (@fontsource) — Sora (display) + Manrope (texto) */
+  --font-display: 'Sora Variable';
+  --font-body: 'Manrope Variable';
+  /* Vermelho NO OFF — ver src/lib/theme.ts para as notas de contraste (WCAG AA). */
+  --red: #e10600;
+  --red-bright: #ff3b30;
+  --red-deep: #b00500;
+  --ink: #050505;
+  --bone: #f5f5f5;
+}
+
+@layer base {
+  html {
+    background: #050505;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-ink font-sans text-bone;
+    min-height: 100vh;
+  }
+  ::selection {
+    background: var(--red);
+    color: #f5f5f5;
+  }
+  /* Focus ring com a variação clara (5,7:1 sobre o fundo), 2px para visibilidade. */
+  :focus-visible {
+    outline: 2px solid var(--red-bright);
+    outline-offset: 3px;
+  }
+  input,
+  textarea,
+  select {
+    color-scheme: dark;
+  }
+}
+
+@layer components {
+  .container-site {
+    @apply mx-auto w-full max-w-site px-5 sm:px-8 lg:px-14;
+  }
+
+  /* Editorial black & white photographic treatment */
+  .photo {
+    filter: grayscale(1) contrast(1.12) brightness(0.92);
+  }
+
+  .eyebrow {
+    @apply font-sans text-[11px] font-semibold uppercase tracking-nav text-mute;
+  }
+
+  .section-title {
+    @apply font-display text-[28px] font-extrabold uppercase leading-none tracking-tight text-bone sm:text-[34px];
+  }
+
+  .link-arrow {
+    @apply inline-flex items-center gap-2 font-sans text-[11px] font-semibold uppercase tracking-nav text-bone transition-colors duration-300 hover:text-red-bright;
+  }
+
+  .btn {
+    @apply inline-flex h-12 items-center justify-center gap-3 rounded-full px-7 font-sans text-[11px] font-bold uppercase tracking-nav transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  /* Texto claro sobre o vermelho (4,6:1); hover clareia, active escurece. */
+  .btn-primary {
+    @apply btn bg-red text-bone hover:bg-red-bright active:scale-[0.98] active:bg-red-deep;
+  }
+  .btn-outline {
+    @apply btn border border-bone/80 text-bone hover:border-red-bright hover:text-red-bright active:scale-[0.98];
+  }
+  .btn-ghost {
+    @apply btn border border-line text-mute hover:border-bone hover:text-bone;
+  }
+  .btn-sm {
+    @apply h-9 px-5 text-[10px];
+  }
+
+  .field {
+    @apply h-12 w-full rounded-card border border-line bg-panel px-4 font-sans text-sm text-bone placeholder:text-mute/60 transition-colors focus:border-red-bright focus:outline-none;
+  }
+  .field-label {
+    @apply mb-2 block text-[10px] font-semibold uppercase tracking-nav text-mute;
+  }
+
+  .card {
+    @apply rounded-card border border-line bg-panel;
+  }
+
+  .chip {
+    @apply inline-flex h-9 items-center rounded-full border border-line px-4 text-[10px] font-semibold uppercase tracking-nav text-mute transition-colors hover:border-bone hover:text-bone;
+  }
+  .chip-active {
+    @apply border-red-bright text-red-bright hover:border-red-bright hover:text-red-bright;
+  }
+
+  .img-zoom {
+    @apply transition-transform duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)];
+  }
+  .group:hover .img-zoom {
+    transform: scale(1.045);
+  }
+
+  .vertical-text {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+  }
+
+  /* ------------------------------------------------------- DESTAQUES */
+  /* Borda em degradê vermelho → branco, sem alterar o layout. */
+  .accent-frame {
+    position: relative;
+    border-radius: 6px;
+    background:
+      linear-gradient(#0a0a0a, #0a0a0a) padding-box,
+      linear-gradient(135deg, rgba(225, 6, 0, 0.85), rgba(245, 245, 245, 0.18) 45%, rgba(225, 6, 0, 0.45)) border-box;
+    border: 1px solid transparent;
+  }
+  /* Iluminação discreta de fundo. */
+  .accent-glow {
+    background:
+      radial-gradient(60% 50% at 80% 0%, rgba(225, 6, 0, 0.16), transparent 70%),
+      radial-gradient(40% 40% at 0% 100%, rgba(225, 6, 0, 0.08), transparent 70%);
+  }
+  .accent-text {
+    background: linear-gradient(100deg, #f5f5f5 20%, #ff3b30 60%, #f5f5f5 95%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .accent-range {
+    @apply h-1 w-full cursor-pointer appearance-none rounded-full bg-line;
+    accent-color: #e10600;
+  }
+  .accent-range::-webkit-slider-thumb {
+    @apply h-5 w-5 appearance-none rounded-full border-2 border-ink bg-red;
+    box-shadow: 0 0 0 1px #e10600, 0 0 18px rgba(225, 6, 0, 0.55);
+  }
+  .accent-range::-moz-range-thumb {
+    @apply h-5 w-5 rounded-full border-2 border-ink bg-red;
+    box-shadow: 0 0 0 1px #e10600, 0 0 18px rgba(225, 6, 0, 0.55);
+  }
+}
+
+@keyframes accent-sheen {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.accent-sheen {
+  background-size: 200% 100%;
+  animation: accent-sheen 6s linear infinite;
+}
+
+/* ------------------------------------------------ HERO CINEMATOGRÁFICO */
+/* Tratamento "trailer" da foto (ver src/components/home/hero/HeroBackdrop.tsx). */
+.hero-photo {
+  filter: grayscale(1) contrast(1.35);
+}
+.hero-tint {
+  background: var(--red);
+  mix-blend-mode: multiply;
+  opacity: 0.85;
+}
+.hero-glow {
+  background: radial-gradient(55% 60% at 68% 38%, color-mix(in srgb, var(--red-bright) 55%, transparent), transparent 72%);
+  mix-blend-mode: screen;
+}
+.hero-fade {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--ink) 85%, transparent) 0%,
+    transparent 24%,
+    transparent 48%,
+    color-mix(in srgb, var(--ink) 70%, transparent) 78%,
+    var(--ink) 100%
+  );
+}
+.hero-vignette {
+  background: radial-gradient(ellipse 75% 70% at 50% 50%, transparent 45%, color-mix(in srgb, var(--ink) 85%, transparent) 100%);
+}
+.hero-grain {
+  mix-blend-mode: overlay;
+  opacity: 0.2;
+}
+.hero-xfade {
+  will-change: opacity;
+}
+
+@keyframes hero-kenburns {
+  from {
+    transform: scale(1.04);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+.hero-kenburns {
+  animation: hero-kenburns 7s linear forwards;
+}
+
+/* Texto do botão de compra: 20s por volta; no hover uma segunda rotação soma velocidade. */
+@keyframes hero-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.hero-spin {
+  animation: hero-spin 20s linear infinite;
+}
+.hero-spin-boost {
+  animation: hero-spin 6s linear infinite;
+  animation-play-state: paused;
+}
+.group:hover .hero-spin-boost,
+.group:focus-visible .hero-spin-boost {
+  animation-play-state: running;
+}
+
+/* Nome da festa: letra por letra, de baixo para cima (o pai tem overflow hidden). */
+@keyframes hero-letter {
+  from {
+    transform: translateY(110%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.hero-letter {
+  display: inline-block;
+  animation: hero-letter 0.75s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes hero-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.hero-progress {
+  transform-origin: left center;
+  animation: hero-progress 7s linear forwards;
+}
+
+@keyframes hero-text-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.hero-text-in {
+  animation: hero-text-in 0.6s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Sem zoom, giro, letras ou progresso; só o fade entre festas. */
+  .hero-kenburns,
+  .hero-spin,
+  .hero-spin-boost,
+  .hero-letter,
+  .hero-progress {
+    animation: none !important;
+  }
+  .hero-xfade {
+    transition-duration: 700ms !important;
+  }
+  .hero-text-in {
+    animation-duration: 500ms !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+}
+
+/* Leaflet dark integration */
+.map-tiles {
+  filter: grayscale(1) invert(1) brightness(0.82) contrast(0.92);
+}
+.leaflet-container {
+  background: #0a0a0a !important;
+  font-family: var(--font-body), system-ui, sans-serif;
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: #111 !important;
+  color: #f5f5f5 !important;
+  border: 1px solid #292929;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+}
+.leaflet-control-attribution {
+  background: rgba(5, 5, 5, 0.7) !important;
+  color: #a0a0a0 !important;
+}
+.leaflet-control-attribution a {
+  color: #a0a0a0 !important;
+}
+.leaflet-bar a {
+  background: #111 !important;
+  color: #f5f5f5 !important;
+  border-color: #292929 !important;
+}
