@@ -1,22 +1,38 @@
 'use client';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { CheckCircle2, Clock, Ticket, XCircle } from 'lucide-react';
 import { useApp } from '@/components/providers/AppProviders';
 import { EmptyState, Skeleton } from '@/components/ui/States';
+import { PixPayment } from '@/components/tickets/PixPayment';
 import { brlCents, formatEventDate } from '@/lib/format';
-import { checkoutApi } from '@/services/api-client';
+import { ApiError, checkoutApi, type OrderStatusResponse } from '@/services/api-client';
 import { ticketService, type MyOrder } from '@/services/ticket-service';
 import { ORDER_STATUS_LABEL, PAYMENT_METHOD_LABEL } from '@/types';
 
-/** Confirmação do pedido: acompanha o status até o pagamento ser aprovado pelo webhook. */
+/** Intervalo do acompanhamento do status (o servidor também reconcilia com o PurinCash). */
+const POLL_MS = 4000;
+
 export default function PedidoPage() {
+  return (
+    <Suspense fallback={<div className="container-site py-16"><Skeleton className="h-80" /></div>}>
+      <Pedido />
+    </Suspense>
+  );
+}
+
+/** Confirmação do pedido: acompanha o status até o pagamento ser confirmado (webhook ou reconciliação). */
+function Pedido() {
   const { id } = useParams<{ id: string }>();
+  const search = useSearchParams();
   const { user, authReady } = useApp();
   const router = useRouter();
   const [order, setOrder] = useState<MyOrder | null | undefined>(undefined);
   const [tickets, setTickets] = useState(0);
+  const [payment, setPayment] = useState<OrderStatusResponse['payment']>(null);
+  const [payBusy, setPayBusy] = useState<'pix' | 'card' | null>(null);
+  const [payError, setPayError] = useState<string | null>(search.get('cartao') === 'cancelado' ? 'O pagamento com cartão não foi concluído. Tente de novo ou pague com Pix.' : null);
 
   useEffect(() => {
     if (authReady && !user) router.replace(`/entrar?next=/pedido/${id}`);
@@ -25,14 +41,16 @@ export default function PedidoPage() {
   useEffect(() => {
     if (!user) return;
     let stop = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async () => {
       try {
-        const s = await checkoutApi.status(id); // também reconcilia com o Mercado Pago
+        const s = await checkoutApi.status(id); // também reconcilia com o PurinCash
         const full = await ticketService.getOrder(id);
         if (stop) return;
         setOrder(full);
         setTickets(s.tickets);
-        if (s.order.status === 'pending') setTimeout(tick, 5000);
+        setPayment(s.payment);
+        if (s.order.status === 'pending') timer = setTimeout(tick, POLL_MS);
       } catch {
         if (!stop) setOrder(null);
       }
@@ -40,14 +58,32 @@ export default function PedidoPage() {
     void tick();
     return () => {
       stop = true;
+      clearTimeout(timer);
     };
   }, [user, id]);
+
+  const pay = async (method: 'pix' | 'card') => {
+    setPayError(null);
+    setPayBusy(method);
+    try {
+      const r = await checkoutApi.pay(id, method);
+      if (method === 'card' && r.checkout_url) {
+        window.location.assign(r.checkout_url);
+        return;
+      }
+      if (r.pix) setPayment((p) => ({ environment: r.environment, card_available: r.card_available, ...(p ?? {}), pix: r.pix }));
+    } catch (err) {
+      setPayError(err instanceof ApiError ? err.message : 'Não foi possível gerar o pagamento.');
+    }
+    setPayBusy(null);
+  };
 
   if (order === undefined) return <div className="container-site py-16"><Skeleton className="h-80" /></div>;
   if (order === null) return <div className="container-site py-24"><EmptyState title="Pedido não encontrado" action={{ href: '/meus-ingressos', label: 'Meus ingressos' }} /></div>;
 
   const paid = order.status === 'paid';
   const pending = order.status === 'pending';
+  const reservationOpen = pending && new Date(order.expires_at).getTime() > Date.now();
   const d = order.event ? formatEventDate(order.event.event_date) : null;
 
   return (
@@ -63,13 +99,28 @@ export default function PedidoPage() {
         {paid
           ? `Emitimos ${tickets} ${tickets === 1 ? 'ingresso' : 'ingressos'} com QR Code único. Enviamos por e-mail para ${order.buyer_email} e eles já estão em Meus ingressos.`
           : pending
-            ? 'Assim que o Mercado Pago confirmar o pagamento, seus ingressos são emitidos automaticamente. Esta página atualiza sozinha.'
+            ? 'Assim que o pagamento for confirmado, seus ingressos são emitidos automaticamente. Esta página atualiza sozinha.'
             : order.status === 'expired'
               ? 'A reserva expirou antes da confirmação do pagamento e os ingressos foram liberados.'
               : order.status === 'refunded' || order.status === 'charged_back'
                 ? 'O pagamento foi estornado e os ingressos deste pedido foram cancelados.'
                 : 'Este pedido foi cancelado. Nenhuma cobrança foi confirmada.'}
       </p>
+
+      {reservationOpen && payment && (
+        <div className="mt-10">
+          <PixPayment
+            pix={payment.pix}
+            paid={false}
+            cardAvailable={payment.card_available}
+            sandbox={payment.environment === 'sandbox'}
+            busy={payBusy}
+            error={payError}
+            onCreatePix={() => void pay('pix')}
+            onCard={() => void pay('card')}
+          />
+        </div>
+      )}
 
       <div className="card mt-10 divide-y divide-line">
         {order.event && d && (
@@ -92,7 +143,7 @@ export default function PedidoPage() {
 
       <div className="mt-8 flex flex-wrap gap-3">
         {paid && <Link href="/meus-ingressos" className="btn-primary"><Ticket className="h-4 w-4" /> Ver meus ingressos</Link>}
-        {!paid && !pending && order.event && <Link href={`/eventos/${order.event.slug}`} className="btn-primary">Tentar de novo</Link>}
+        {!paid && !reservationOpen && order.event && <Link href={`/eventos/${order.event.slug}`} className="btn-primary">Tentar de novo</Link>}
         <Link href="/eventos" className="btn-ghost">Agenda</Link>
       </div>
       <p className="mt-8 text-[11px] text-mute">Pedido {order.id}</p>

@@ -47,32 +47,46 @@ export async function api<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 // ------------------------------------------------------------------ checkout
 
+/** Meios disponíveis (cartão não existe no sandbox do PurinCash). */
+export interface PaymentOptions {
+  environment: 'live' | 'sandbox';
+  card_available: boolean;
+}
+
+/** Pix: copia e cola (BR Code) e imagem do QR (URL ou data URL). */
+export interface PixInfo {
+  br_code: string;
+  qr_image: string;
+  expires_at: string | null;
+}
+
 export interface ReserveResponse {
   order_id: string;
   total: number;
   expires_at: string;
+  payment?: PaymentOptions;
 }
 
-export interface PayResponse {
-  status: 'approved' | 'pending' | 'in_process' | 'rejected' | 'cancelled' | string;
-  status_detail: string | null;
-  payment_id: string;
+export interface PayResponse extends PaymentOptions {
+  method: 'pix' | 'card';
+  reused: boolean;
   order_status: OrderStatus;
-  /** Pix: copia-e-cola e QR em base64. */
-  pix?: { qr_code: string; qr_code_base64: string; expires_at: string | null } | null;
-  /** Boleto: link do PDF. */
-  boleto_url?: string | null;
+  pix: PixInfo | null;
+  /** Cartão: página de pagamento hospedada do PurinCash. */
+  checkout_url: string | null;
+  expires_at: string | null;
 }
 
 export interface OrderStatusResponse {
   order: { id: string; status: OrderStatus; total: number; expires_at: string; payment_method: string | null; event_id: string };
   tickets: number;
+  payment: (PaymentOptions & { pix: PixInfo | null }) | null;
 }
 
 export const checkoutApi = {
   reserve: (event_id: string, items: CartItem[], buyer: BuyerInfo) => api<ReserveResponse>('POST', '/api/checkout/reserve', { event_id, items, buyer }),
-  /** formData = objeto devolvido pelo Payment Brick no onSubmit. O valor é recalculado no servidor. */
-  pay: (order_id: string, formData: Record<string, unknown>) => api<PayResponse>('POST', '/api/checkout/pay', { order_id, formData }),
+  /** Cria ou reutiliza a cobrança do pedido. O valor é sempre o total do banco. */
+  pay: (order_id: string, method: 'pix' | 'card' = 'pix') => api<PayResponse>('POST', '/api/checkout/pay', { order_id, method }),
   status: (order_id: string) => api<OrderStatusResponse>('GET', `/api/orders/${order_id}`),
   cancel: (order_id: string) => api<{ ok: true }>('DELETE', `/api/orders/${order_id}`),
 };

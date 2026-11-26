@@ -1,17 +1,17 @@
 'use client';
 import Link from 'next/link';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { clsx } from 'clsx';
-import { Check, Clock, Copy, ExternalLink, Lock } from 'lucide-react';
-import { useApp, useToast } from '@/components/providers/AppProviders';
+import { Check, Clock, Lock } from 'lucide-react';
+import { useApp } from '@/components/providers/AppProviders';
 import { FieldError } from '@/components/ui/Controls';
 import { EmptyState, Skeleton } from '@/components/ui/States';
-import { PaymentBrick } from '@/components/tickets/PaymentBrick';
+import { PixPayment } from '@/components/tickets/PixPayment';
 import { useAsync } from '@/hooks/useAsync';
 import { brlCents, formatEventDate } from '@/lib/format';
 import { formatCpf, formatPhone, isFullName, isValidCpf, isValidPhone, onlyDigits } from '@/lib/cpf';
-import { ApiError, checkoutApi, type PayResponse, type ReserveResponse } from '@/services/api-client';
+import { ApiError, checkoutApi, type PaymentOptions, type PixInfo, type ReserveResponse } from '@/services/api-client';
 import { ticketService } from '@/services/ticket-service';
 import { TICKET_TYPE_LABEL, type BuyerInfo } from '@/types';
 
@@ -23,7 +23,10 @@ export default function CheckoutPage() {
   );
 }
 
-type Step = 'dados' | 'pagamento' | 'aguardando';
+type Step = 'dados' | 'pagamento';
+
+/** Intervalo do acompanhamento do status (webhook ou reconciliação no servidor). */
+const POLL_MS = 4000;
 
 function parseItems(raw: string | null): { batch_id: string; quantity: number }[] {
   return (raw ?? '')
@@ -36,7 +39,6 @@ function parseItems(raw: string | null): { batch_id: string; quantity: number }[
 function Checkout() {
   const params = useSearchParams();
   const router = useRouter();
-  const toast = useToast();
   const { data, user, authReady } = useApp();
   const slug = params.get('evento') ?? '';
   const items = useMemo(() => parseItems(params.get('itens')), [params]);
@@ -44,9 +46,13 @@ function Checkout() {
   const [step, setStep] = useState<Step>('dados');
   const [buyer, setBuyer] = useState<BuyerInfo>({ name: '', cpf: '', email: '', phone: '' });
   const [error, setError] = useState<string | null>(null);
+  const [payError, setPayError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [payBusy, setPayBusy] = useState<'pix' | 'card' | null>(null);
   const [order, setOrder] = useState<ReserveResponse | null>(null);
-  const [pending, setPending] = useState<PayResponse | null>(null);
+  const [options, setOptions] = useState<PaymentOptions>({ environment: 'sandbox', card_available: false });
+  const [pix, setPix] = useState<PixInfo | null>(null);
+  const [paid, setPaid] = useState(false);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -68,20 +74,62 @@ function Checkout() {
     return () => clearInterval(t);
   }, [order]);
 
-  // Pix/boleto: acompanha o pedido até o pagamento ser confirmado (webhook ou reconciliação).
+  // Acompanha o pedido até o pagamento ser confirmado (a cada ~4 s).
   useEffect(() => {
-    if (step !== 'aguardando' || !order) return;
+    if (step !== 'pagamento' || !order || !pix || paid) return;
+    let stop = false;
     const t = setInterval(async () => {
       try {
         const s = await checkoutApi.status(order.order_id);
-        if (s.order.status === 'paid') router.push(`/pedido/${order.order_id}`);
-        if (['expired', 'cancelled', 'refunded'].includes(s.order.status)) router.push(`/pedido/${order.order_id}`);
+        if (stop) return;
+        if (s.order.status === 'paid') {
+          setPaid(true);
+          setTimeout(() => router.push(`/pedido/${order.order_id}`), 2000);
+        } else if (['expired', 'cancelled', 'refunded', 'charged_back'].includes(s.order.status)) {
+          router.push(`/pedido/${order.order_id}`);
+        } else if (s.payment?.pix) {
+          setPix(s.payment.pix);
+        }
       } catch {
         /* tenta de novo no próximo ciclo */
       }
-    }, 5000);
-    return () => clearInterval(t);
-  }, [step, order, router]);
+    }, POLL_MS);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [step, order, pix, paid, router]);
+
+  const pay = useCallback(
+    async (orderId: string, method: 'pix' | 'card') => {
+      setPayError(null);
+      setPayBusy(method);
+      try {
+        const r = await checkoutApi.pay(orderId, method);
+        setOptions({ environment: r.environment, card_available: r.card_available });
+        if (r.order_status === 'paid') {
+          setPaid(true);
+          router.push(`/pedido/${orderId}`);
+          return;
+        }
+        if (method === 'card') {
+          if (r.checkout_url) {
+            window.location.assign(r.checkout_url);
+            return; // mantém o botão ocupado durante o redirecionamento
+          }
+          setPayError('Não foi possível abrir o pagamento com cartão. Tente o Pix.');
+        } else if (r.pix) {
+          setPix(r.pix);
+        } else {
+          setPayError('Não foi possível gerar o Pix. Tente novamente.');
+        }
+      } catch (err) {
+        setPayError(err instanceof ApiError ? err.message : 'Não foi possível gerar o pagamento. Tente novamente.');
+      }
+      setPayBusy(null);
+    },
+    [router],
+  );
 
   const { data: base, error: loadError } = useAsync(async () => {
     if (!slug) return null;
@@ -106,7 +154,7 @@ function Checkout() {
   const { event } = base;
   const d = formatEventDate(event.event_date);
   const remaining = order ? Math.max(0, new Date(order.expires_at).getTime() - now) : 0;
-  const expired = order !== null && remaining === 0 && step !== 'aguardando';
+  const expired = order !== null && remaining === 0 && !paid;
 
   const reserve = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,38 +167,14 @@ function Checkout() {
     try {
       const r = await checkoutApi.reserve(event.id, items, { ...buyer, cpf: onlyDigits(buyer.cpf), phone: onlyDigits(buyer.phone), email: buyer.email.trim() });
       setOrder(r);
+      if (r.payment) setOptions(r.payment);
       setNow(Date.now());
       setStep('pagamento');
+      void pay(r.order_id, 'pix'); // Pix é o meio padrão: gera o QR na hora
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível reservar.');
     } finally {
       setBusy(false);
-    }
-  };
-
-  const pay = async (formData: Record<string, unknown>) => {
-    if (!order) return;
-    setError(null);
-    try {
-      const r = await checkoutApi.pay(order.order_id, formData);
-      if (r.order_status === 'paid' || r.status === 'approved') {
-        router.push(`/pedido/${order.order_id}`);
-        return;
-      }
-      if (r.status === 'rejected') {
-        setError('Pagamento recusado. Confira os dados do cartão ou escolha outro meio de pagamento.');
-        throw new Error('rejected');
-      }
-      if (r.status === 'pending' || r.status === 'in_process') {
-        setPending(r);
-        setStep('aguardando');
-        return;
-      }
-      setError('Não foi possível concluir o pagamento. Tente novamente.');
-      throw new Error(r.status);
-    } catch (err) {
-      if (err instanceof ApiError) setError(err.message);
-      throw err; // o Brick volta ao estado editável
     }
   };
 
@@ -159,7 +183,6 @@ function Checkout() {
     router.push(`/eventos/${event.slug}`);
   };
 
-  const [first, ...rest] = buyer.name.trim().split(/\s+/);
   const mm = String(Math.floor(remaining / 60000)).padStart(2, '0');
   const ss = String(Math.floor((remaining % 60000) / 1000)).padStart(2, '0');
 
@@ -169,7 +192,7 @@ function Checkout() {
       <h1 className="mt-3 font-display text-[36px] font-extrabold uppercase leading-none tracking-tight sm:text-[48px]">Finalizar compra</h1>
       <ol className="mt-8 flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-nav">
         {(['Ingressos', 'Seus dados', 'Pagamento', 'Confirmação'] as const).map((label, i) => {
-          const idx = step === 'dados' ? 1 : step === 'pagamento' ? 2 : 3;
+          const idx = step === 'dados' ? 1 : paid ? 3 : 2;
           return (
             <li key={label} className={clsx('flex items-center gap-2 rounded-full border px-4 py-2', i < idx ? 'border-line text-mute' : i === idx ? 'border-red-bright text-red-bright' : 'border-line text-mute/60')}>
               {i < idx ? <Check className="h-3 w-3" /> : <span>{i + 1}</span>} {label}
@@ -180,7 +203,7 @@ function Checkout() {
 
       <div className="mt-10 grid gap-10 lg:grid-cols-[1.4fr_1fr] lg:gap-16">
         <div>
-          {order && step !== 'aguardando' && (
+          {order && !paid && (
             <div className={clsx('mb-6 flex items-center gap-3 rounded-card border px-4 py-3 text-[13px]', expired ? 'border-red-bright bg-red-soft' : 'border-line bg-panel')} role="timer" aria-live="polite">
               <Clock className="h-4 w-4 text-red-bright" />
               {expired ? 'Sua reserva expirou e os ingressos foram liberados.' : <>Ingressos reservados por <strong className="font-display">{mm}:{ss}</strong></>}
@@ -205,44 +228,27 @@ function Checkout() {
 
           {step === 'pagamento' && order && (
             <div className="flex flex-col gap-4">
-              {expired ? (
+              {expired && !pix ? (
                 <div className="card p-6">
                   <p className="text-sm text-mute">Volte ao evento e escolha os ingressos novamente.</p>
                   <Link href={`/eventos/${event.slug}`} className="btn-primary mt-5">Escolher de novo</Link>
                 </div>
               ) : (
                 <>
-                  <FieldError message={error} />
-                  <PaymentBrick amount={Number(order.total)} payer={{ email: buyer.email.trim(), firstName: first ?? '', lastName: rest.join(' '), cpf: onlyDigits(buyer.cpf) }} onSubmit={pay} />
-                  <button onClick={cancel} className="btn-ghost btn-sm self-start">Cancelar reserva</button>
+                  <PixPayment
+                    pix={pix}
+                    paid={paid}
+                    cardAvailable={options.card_available}
+                    sandbox={options.environment === 'sandbox'}
+                    busy={payBusy}
+                    error={payError}
+                    onCreatePix={() => void pay(order.order_id, 'pix')}
+                    onCard={() => void pay(order.order_id, 'card')}
+                  />
+                  {!pix && !paid && <button onClick={cancel} className="btn-ghost btn-sm self-start">Cancelar reserva</button>}
+                  {pix && !paid && <Link href={`/pedido/${order.order_id}`} className="link-arrow">Acompanhar pedido</Link>}
                 </>
               )}
-            </div>
-          )}
-
-          {step === 'aguardando' && pending && order && (
-            <div className="card flex flex-col gap-5 p-6 sm:p-8">
-              <p className="eyebrow text-red-bright">Aguardando pagamento</p>
-              {pending.pix ? (
-                <>
-                  <p className="text-sm text-bone/85">Pague com Pix pelo app do seu banco. A confirmação é automática e seus ingressos aparecem em seguida.</p>
-                  {pending.pix.qr_code_base64 && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={`data:image/png;base64,${pending.pix.qr_code_base64}`} alt="QR Code Pix" className="h-56 w-56 self-center rounded-card bg-white p-3" />
-                  )}
-                  <label><span className="field-label">Pix copia e cola</span><textarea readOnly className="field h-auto py-3 font-mono text-[11px]" rows={3} value={pending.pix.qr_code} /></label>
-                  <button onClick={() => navigator.clipboard.writeText(pending.pix!.qr_code).then(() => toast('Código Pix copiado.'))} className="btn-outline self-start"><Copy className="h-4 w-4" /> Copiar código</button>
-                  {pending.pix.expires_at && <p className="text-[12px] text-mute">Válido até {new Date(pending.pix.expires_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.</p>}
-                </>
-              ) : pending.boleto_url ? (
-                <>
-                  <p className="text-sm text-bone/85">Seu boleto foi gerado. Os ingressos ficam reservados até o vencimento e são emitidos quando o banco confirmar o pagamento (até 3 dias úteis).</p>
-                  <a href={pending.boleto_url} target="_blank" rel="noopener noreferrer" className="btn-primary self-start"><ExternalLink className="h-4 w-4" /> Abrir boleto</a>
-                </>
-              ) : (
-                <p className="text-sm text-bone/85">O pagamento está em análise pelo Mercado Pago. Você receberá os ingressos por e-mail assim que ele for aprovado.</p>
-              )}
-              <Link href={`/pedido/${order.order_id}`} className="link-arrow">Acompanhar pedido</Link>
             </div>
           )}
         </div>
@@ -266,8 +272,8 @@ function Checkout() {
               <span className="eyebrow">Total</span>
               <span className="font-display text-[26px] font-extrabold text-red-bright">{brlCents(order ? Number(order.total) : subtotal)}</span>
             </div>
-            {process.env.NEXT_PUBLIC_MP_ENV !== 'production' && (
-              <p className="border-t border-line px-6 py-3 text-[11px] text-mute">Ambiente de teste do Mercado Pago (sandbox): use os cartões de teste — nenhuma cobrança real é feita.</p>
+            {order && options.environment === 'sandbox' && (
+              <p className="border-t border-line px-6 py-3 text-[11px] text-mute">Ambiente de teste do PurinCash (sandbox): nenhuma cobrança real é feita e o cartão fica indisponível.</p>
             )}
           </div>
         </aside>

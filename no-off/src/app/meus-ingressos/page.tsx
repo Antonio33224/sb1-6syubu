@@ -54,7 +54,7 @@ export default function MeusIngressosPage() {
             <EmptyState title="Nenhum pedido" text="Seus pedidos aparecem aqui." action={{ href: '/eventos', label: 'Ver a agenda' }} />
           ) : (
             <ul className="divide-y divide-line rounded-card border border-line">
-              {data.orders.filter((o) => o.status !== 'cancelled' || o.mp_payment_id).map((o) => (
+              {data.orders.filter((o) => o.status !== 'cancelled' || o.provider_payment_id || o.mp_payment_id).map((o) => (
                 <li key={o.id}>
                   <Link href={`/pedido/${o.id}`} className="flex flex-wrap items-center justify-between gap-3 p-5 hover:bg-panel">
                     <div>

@@ -1,7 +1,7 @@
 # NO **OFF** — Uma nova forma de adquirir experiências noturnas
 
 Plataforma de venda de ingressos para a vida noturna, com agenda, rankings, avaliações e comunidade.
-Next.js 15 · React 19 · TypeScript · Tailwind CSS · Supabase (Postgres, Auth, Storage, RLS, Realtime) · Mercado Pago (Payment Brick) · Leaflet.
+Next.js 15 · React 19 · TypeScript · Tailwind CSS · Supabase (Postgres, Auth, Storage, RLS, Realtime) · PurinCash (Pix + cartão) · Leaflet.
 
 ---
 
@@ -53,6 +53,7 @@ A interface só esconde o que o usuário não pode usar.
    | `0004_audit_security.sql` | `audit_logs` imutável, alertas de login falho |
    | `0005_review_import.sql` | Importação de avaliações do pré-lançamento |
    | `0006_ticketing.sql` | Ingressos: lotes, pedidos, reserva, pagamentos, webhooks, ingressos com QR, lista VIP, check-in, visibilidade, relatórios, suspensão, view pública |
+   | `0007_purincash.sql` | Gateway PurinCash: colunas de provedor em pedidos/pagamentos, `purincash_webhook_events` (dedup por `X-Webhook-Id`), `apply_payment` conferindo `amountCents` |
 
    Todas as migrações são idempotentes (podem ser executadas de novo).
 3. Se o banco tiver dados demonstrativos de um seed antigo, remova com `select public.remove_demo_data();` (ou em `/admin → Configurações → Remover dados demo`).
@@ -78,19 +79,22 @@ Nada disso fica no `.env` do site.
 
 Os celulares são enviados em formato E.164 (`+55DDDNÚMERO`). O perfil é criado automaticamente no primeiro login, mesmo sem e-mail.
 
-### 4. Mercado Pago
+### 4. PurinCash (pagamentos)
 
-1. Em [Suas integrações](https://www.mercadopago.com.br/developers/panel/app), crie uma aplicação do tipo **Pagamentos online → Checkout Transparente / Bricks**.
-2. **Credenciais**:
-   - Sandbox: use as **credenciais de teste** (ou as de um usuário de teste) em `MP_ACCESS_TOKEN` e `NEXT_PUBLIC_MP_PUBLIC_KEY`, com `NEXT_PUBLIC_MP_ENV=sandbox`.
-   - Produção: credenciais de produção com `NEXT_PUBLIC_MP_ENV=production`. O servidor **recusa** vender em produção com token `TEST-`.
-3. **Webhooks** (Suas integrações → Webhooks → Configurar notificações):
-   - URL: `https://seu-dominio.com.br/api/webhooks/mercadopago`.
-   - Evento: **Pagamentos**.
-   - Copie a **assinatura secreta** para `MP_WEBHOOK_SECRET`.
-4. Teste com os [cartões de teste](https://www.mercadopago.com.br/developers/pt/docs/checkout-bricks/additional-content/your-integrations/test/cards). O nome do titular define o resultado: `APRO` aprovado, `OTHE` recusado, `CONT` pendente.
+Documentação: [docs.purin.cash](https://docs.purin.cash) (versão para IA: `https://docs.purin.cash/llms-full.txt`).
 
-Em `localhost` não há webhook: o site **reconcilia** consultando a API do MP enquanto a página do pedido está aberta. Para testar o webhook localmente, exponha a porta com um túnel (ex.: `ngrok http 3000`) e use a URL do túnel em `NEXT_PUBLIC_SITE_URL`.
+1. No painel do PurinCash, em **Equipe & API → Developer API**:
+   - copie a **chave de API** para `PURINCASH_API_KEY` (`ps_test_...` no sandbox, `ps_live_...` em produção);
+   - copie o **segredo de webhook** da conta para `PURINCASH_WEBHOOK_SECRET`.
+2. **URL do webhook**: cadastre `https://<seu-site>/api/webhooks/purincash` no painel (mesma tela). Além disso, o site envia essa mesma URL como `callbackUrl` **em cada cobrança** — por isso `NEXT_PUBLIC_SITE_URL` precisa ser o domínio HTTPS final. Eventos tratados: `charge.paid`, `payment.paid`, `card_payment.paid`, `refund.completed`, `refund.failed`, `dispute.*`.
+3. **Ambientes** (detectados pelo prefixo da chave):
+   - **Sandbox (`ps_test_`)**: só Pix; o botão de cartão fica escondido. O QR de sandbox não é pagável — simule com
+     `curl -X POST https://api.purin.cash/v1/sandbox/charges/<paymentId>/simulate-paid -H "Authorization: Bearer ps_test_..."`.
+     O sandbox sempre envia o evento `payment.paid` (o site trata igual a `charge.paid`).
+   - **Produção (`ps_live_`)**: Pix + cartão (página hospedada do PurinCash, 30 min). Em `VERCEL_ENV=production` o servidor **recusa** chave `ps_test_`.
+4. **Reembolsos**: Pix é reembolsado pela API (integral, uma vez por venda, taxa de R$ 0,50). Reembolso de **cartão não é documentado** pelo PurinCash: o site registra `payment.refund_manual_required` (crítico) no audit log e o estorno deve ser feito no painel do PurinCash.
+
+Em `localhost` não há webhook: o site **reconcilia** consultando a API (GET da cobrança) enquanto a página do pedido está aberta, no máximo a cada 20 s por cobrança (limite de 120 req/min da conta). Para testar o webhook localmente, use um túnel (ex.: `ngrok http 3000`) e coloque a URL do túnel em `NEXT_PUBLIC_SITE_URL`.
 
 ### 5. E-mail (ingressos)
 
@@ -104,11 +108,10 @@ Copie `.env.example` para `.env.local`. Resumo:
 | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | navegador + servidor | Supabase (protegido por RLS) |
 | `SUPABASE_SERVICE_ROLE_KEY` | **só servidor** | Aplicar pagamentos, enviar ingressos, cron, alertas |
-| `NEXT_PUBLIC_SITE_URL` | ambos | Links, OAuth, `notification_url`, sitemap |
-| `MP_ACCESS_TOKEN` | **só servidor** | API do Mercado Pago |
-| `MP_WEBHOOK_SECRET` | **só servidor** | Validação do `x-signature` |
-| `NEXT_PUBLIC_MP_PUBLIC_KEY` | navegador | Payment Brick |
-| `NEXT_PUBLIC_MP_ENV` | ambos | `sandbox` \| `production` |
+| `NEXT_PUBLIC_SITE_URL` | ambos | Links, OAuth, `callbackUrl` do PurinCash, sitemap |
+| `PURINCASH_API_KEY` | **só servidor** | API do PurinCash (`ps_test_` sandbox / `ps_live_` produção) |
+| `PURINCASH_WEBHOOK_SECRET` | **só servidor** | Validação do `X-Webhook-Signature` |
+| `PURINCASH_ENV` | **só servidor** | (opcional, fora da Vercel) `production` bloqueia chave `ps_test_` |
 | `CRON_SECRET` | **só servidor** | Protege `/api/cron/expire-orders` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` | **só servidor** | E-mail dos ingressos e alertas |
 | `LOG_HASH_SECRET` | **só servidor** | (opcional) hash dos IPs de login falho |
@@ -126,12 +129,12 @@ Google e SMS são configurados no painel do Supabase, e não no `.env`.
    git push -u origin main
    ```
 2. Na Vercel: **Add New → Project** → importe o repositório (framework detectado: Next.js).
-3. Em **Settings → Environment Variables**, cadastre as variáveis acima (Production e Preview). Use credenciais de **teste** do MP no Preview.
+3. Em **Settings → Environment Variables**, cadastre as variáveis acima (Production e Preview). Use a chave `ps_test_` do PurinCash só no Preview; em Production, `ps_live_`.
 4. Faça o deploy. Depois, atualize:
    - `NEXT_PUBLIC_SITE_URL` com o domínio final;
-   - a URL do webhook no Mercado Pago;
+   - a URL do webhook no PurinCash (`https://<site>/api/webhooks/purincash`);
    - a *Site URL* e as *Redirect URLs* no Supabase.
-5. **Cron**: o `vercel.json` agenda `/api/cron/expire-orders` uma vez por dia (limite do plano Hobby). É só uma limpeza: o estoque já ignora reservas vencidas em tempo real. No plano Pro, pode ser `*/15 * * * *`.
+5. **Cron**: o `vercel.json` agenda `/api/cron/expire-orders` uma vez por dia (limite do plano Hobby). Antes de expirar, ele confere na API do PurinCash as cobranças dos pedidos vencidos (até 40 por execução). O estoque já ignora reservas vencidas em tempo real. No plano Pro, pode ser `*/15 * * * *`.
 
 ---
 
@@ -141,27 +144,32 @@ Google e SMS são configurados no painel do Supabase, e não no `.env`.
 Página do evento → lote + quantidade → /checkout (dados do comprador)
   → POST /api/checkout/reserve  → reserve_order(): trava a festa (FOR UPDATE), confere lote/estoque/capacidade,
                                    cria pedido "pending" que segura os ingressos por 10 min
-  → Payment Brick (Pix · cartão parcelado · boleto)
-  → POST /api/checkout/pay      → cria o pagamento no MP com o TOTAL DO BANCO (valor do navegador é ignorado),
-                                   X-Idempotency-Key, external_reference = pedido
-  → POST /api/webhooks/mercadopago → valida x-signature (HMAC) → idempotência (webhook_events)
-                                   → GET /v1/payments/{id} (não confia no corpo) → apply_payment()
-  → aprovado: ingressos com QR único emitidos + e-mail + "Meus ingressos" → /pedido/[id]
+  → POST /api/checkout/pay {method:"pix"} (padrão)
+        → POST /v1/charges com o TOTAL DO BANCO em centavos, expiresIn = prazo da reserva,
+          callbackUrl, metadata = '{"orderId":"..."}' → QR + copia e cola na tela (polling a cada 4 s)
+     ou {method:"card"} (só produção) → POST /v1/card-payments → redireciona para checkoutUrl
+        → successUrl = /pedido/[id] (o retorno NÃO confirma nada; a página continua consultando)
+     Cobrança pendente do mesmo pedido/método é REUTILIZADA (a API não tem idempotência).
+  → POST /api/webhooks/purincash → HMAC-SHA256 do corpo cru (timingSafeEqual) → dedup por X-Webhook-Id
+        → confirma por GET (/charges/{id} ou /card-payments/{orderCode}) → apply_payment() → 200 em < 5 s
+  → pago: ingressos com QR único + e-mail (após a resposta) + "Meus ingressos" → /pedido/[id]
+  Sem webhook: GET /api/orders/[id] e o cron reconciliam pela API.
 ```
 
 **Status tratados** (em `public.apply_payment`):
 
-| Status no MP | O que acontece |
+| Status no PurinCash | O que acontece |
 | --- | --- |
-| `approved` | Emite os ingressos. Repetido não emite em dobro. Valor divergente não emite e vai para o audit log como `critical`. |
-| `pending` / `in_process` | Pix e boleto estendem a reserva até o vencimento (Pix 30 min, boleto 3 dias). |
-| `rejected` | A reserva continua até expirar, para o comprador tentar outro meio. |
-| `cancelled` / `expired` | Libera o estoque. |
-| `refunded` / `charged_back` | Pedido estornado e ingressos válidos cancelados. |
+| `paid` | Confere `amountCents` com o total do pedido e emite os ingressos. Repetido não emite em dobro. Valor divergente: pagamento fica `amount_mismatch`, nada é emitido, audit log `critical` e e-mail para o admin. |
+| `pending` | Registra a cobrança no pedido. O cartão estende a reserva até o vencimento (30 min). |
+| `failed` | A reserva continua até expirar, para o comprador tentar de novo. |
+| `expired` | Pedido expira e o estoque é liberado. |
+| `refunded` | Pedido estornado e ingressos válidos cancelados (só se for a cobrança que pagou o pedido). |
 
 Outras regras:
-- **Pago depois que a reserva expirou e sem estoque**: estorno automático via API.
-- **Pagamento duplicado** (ex.: gerou Pix e pagou no cartão): o excedente é estornado.
+- **Pago depois que a reserva expirou e sem estoque**: Pix é reembolsado pela API (`idempotencyKey` = id do pedido); cartão vira ação manual no audit log.
+- **Pagamento duplicado** (ex.: pagou o Pix e também o cartão): o excedente é reembolsado (Pix) ou sinalizado para estorno manual (cartão).
+- **Pedidos antigos do Mercado Pago** continuam no banco (`provider = 'mercadopago'`, `mp_payment_id` preservado) e aparecem nos relatórios normalmente.
 
 **Lotes** (`public.batch_stock`):
 - Os lotes seguem a ordem dentro de cada tipo (pista, meia, VIP, camarote).
@@ -246,17 +254,17 @@ src/
                          produtor, admin, api/{checkout,orders,webhooks,cron,producer,admin}
   components/            brand, layout, home, cards, tickets, producer, admin, reviews, ui…
   lib/                   ranking, rating, cpf, public-events, vip-csv, brand, theme
-  lib/server/            auth, mercadopago, tickets/{handlers,emails}, platform, reports, mailer, admin
+  lib/server/            auth, purincash, tickets/{handlers,emails}, platform, reports, mailer, admin
   services/              DataService (Supabase), ticket-service, api-client
-supabase/migrations/     0001–0006
+supabase/migrations/     0001–0007
 tests/                   node:test
 ```
 
 ## Segurança
 
 Veja `SECURITY_AUDIT.md`. Pontos principais:
-- Credenciais só em variáveis de ambiente; a service_role e o Access Token do MP nunca vão ao navegador.
-- O webhook é assinado (HMAC + `timingSafeEqual`) e idempotente.
+- Credenciais só em variáveis de ambiente; a service_role e a chave do PurinCash nunca vão ao navegador nem aos logs.
+- O webhook é assinado (HMAC do corpo cru + `timingSafeEqual`), deduplicado por `X-Webhook-Id` e sempre confirmado por GET na API.
 - O valor cobrado vem do banco.
 - Os ingressos só são emitidos por `apply_payment`, que só a `service_role` executa.
 - Toda alteração de festa ou lote, mudança de visibilidade, suspensão, pagamento e geração de relatório vai para `audit_logs`, que é imutável.

@@ -14,7 +14,7 @@ export default function SobrePage() {
       </p>
       <h2>Ingressos</h2>
       <p>
-        O pagamento é processado pelo Mercado Pago (Pix, cartão de crédito com parcelamento e boleto). O ingresso digital, com QR Code único,
+        O pagamento é processado pelo PurinCash (Pix ou cartão de crédito). O ingresso digital, com QR Code único,
         é emitido somente após a confirmação do pagamento, enviado por e-mail e fica disponível em <Link href="/meus-ingressos">Meus ingressos</Link>.
       </p>
       <h2>Rankings e avaliações</h2>

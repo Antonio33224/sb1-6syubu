@@ -11,7 +11,7 @@ export default function TermosPage() {
       <p>É necessário ter uma conta para comprar ingressos, avaliar, curtir, favoritar ou publicar conteúdo. Você é responsável pelas informações publicadas.</p>
       <h2>2. Ingressos</h2>
       <p>
-        Os ingressos são nominais ao comprador e emitidos somente após a aprovação do pagamento pelo Mercado Pago. Cada ingresso tem um QR
+        Os ingressos são nominais ao comprador e emitidos somente após a confirmação do pagamento pelo PurinCash. Cada ingresso tem um QR
         Code único, válido para uma única entrada; depois do check-in ele é bloqueado. Não compartilhe seus códigos.
       </p>
       <h2>3. Reserva e lotes</h2>

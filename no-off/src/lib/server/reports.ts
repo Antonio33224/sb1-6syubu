@@ -57,7 +57,7 @@ export function buildTables(r: EventReport, section: ReportSection): Table[] {
       header: ['Indicador', 'Valor'],
       rows: [
         ['Faturamento bruto', money(rv.gross)],
-        ['Taxas (Mercado Pago)', money(rv.fees)],
+        ['Taxas (gateway)', money(rv.fees)],
         ['Faturamento líquido', money(rv.net)],
         ['Estornos / chargebacks', money(rv.refunded)],
         ['Ingressos com check-in', `${r.checkins.tickets_used}/${r.checkins.tickets_total}`],

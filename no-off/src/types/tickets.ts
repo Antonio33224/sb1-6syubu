@@ -43,6 +43,8 @@ export const PAYMENT_METHOD_LABEL: Record<string, string> = {
   debit_card: 'Cartão de débito',
   bank_transfer: 'Pix',
   pix: 'Pix',
+  card: 'Cartão de crédito',
+  // Pedidos antigos do Mercado Pago:
   ticket: 'Boleto',
   account_money: 'Saldo Mercado Pago',
 };
@@ -120,7 +122,12 @@ export interface Order {
   expires_at: string;
   payment_method: string | null;
   installments: number | null;
+  /** Pedidos antigos (Mercado Pago). */
   mp_payment_id: string | null;
+  provider: 'mercadopago' | 'purincash' | null;
+  /** Cobrança atual: psc_... (Pix) ou orderCode (cartão) no PurinCash. */
+  provider_payment_id: string | null;
+  provider_method: 'pix' | 'card' | null;
   paid_at: string | null;
   created_at: string;
 }

@@ -13,7 +13,8 @@ const PATTERNS: [RegExp, string | ((m: string) => string)][] = [
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, '[jwt]'],
   [/\b(sk|pk|rk|ek|whsec|sess)_(live_|test_)?[A-Za-z0-9]{8,}\b/g, '[chave]'],
   [/\bsk-[A-Za-z0-9_-]{8,}\b/g, '[chave]'],
-  // Credenciais do Mercado Pago (Access Token / Public Key de produção e de teste)
+  // Chaves do PurinCash (ps_live_ / ps_test_) e credenciais antigas do Mercado Pago
+  [/\bps_(live|test)_[A-Za-z0-9_-]{6,}/g, '[chave]'],
   [/\b(APP_USR|TEST)-[A-Za-z0-9-]{16,}\b/g, '[chave]'],
   [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, (m) => maskEmail(m)],
   [/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b|(?<![\w-])\d{11}(?![\w-])/g, '[cpf]'],

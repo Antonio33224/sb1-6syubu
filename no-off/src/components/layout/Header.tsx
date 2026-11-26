@@ -13,9 +13,7 @@ import { SearchOverlay } from './SearchOverlay';
 export const NAV = [
   { href: '/eventos', label: 'Ingressos' },
   { href: '/rankings', label: 'Rankings' },
-  { href: '/reviews', label: 'Reviews' },
   { href: '/descobrir', label: 'Descobrir' },
-  { href: '/editorial', label: 'Editorial' },
 ];
 
 export function Header() {

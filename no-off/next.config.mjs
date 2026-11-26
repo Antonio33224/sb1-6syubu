@@ -6,7 +6,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 /**
  * Cabeçalhos de segurança aplicados a todas as respostas.
  * (CSP completa fica como próximo passo — ver SECURITY_AUDIT.md — porque o site
- * carrega Supabase, o SDK/iframes do Mercado Pago, tiles do mapa e imagens externas.)
+ * carrega Supabase, o QR Pix do PurinCash, tiles do mapa e imagens externas.)
  */
 const securityHeaders = [
   { key: 'X-Frame-Options', value: 'DENY' },
