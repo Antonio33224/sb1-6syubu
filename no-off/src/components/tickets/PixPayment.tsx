@@ -1,7 +1,7 @@
 'use client';
 /**
- * Pagamento com PurinCash: Pix (QR + copia e cola + contagem regressiva) e,
- * em produção, o botão "Pagar com cartão" (redireciona para o checkout hospedado).
+ * Pagamento Pix pela MisticPay: QR + copia e cola + contagem regressiva.
+ * O botão de cartão só aparece se cardAvailable (a MisticPay não tem cartão).
  * O status é acompanhado pela página que usa o componente (polling ~4 s).
  */
 import { useEffect, useState } from 'react';
@@ -114,7 +114,7 @@ export function PixPayment({
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             Aguardando pagamento{remaining !== null ? <> · expira em <strong className="font-display text-bone">{mm}:{ss}</strong></> : null}
           </div>
-          {sandbox && <p className="text-[11px] text-mute">Sandbox: este código não é pagável. Simule o pagamento com <code>POST /v1/sandbox/charges/&#123;paymentId&#125;/simulate-paid</code>.</p>}
+          {sandbox && <p className="text-[11px] text-mute">Ambiente de teste: este código não é pagável.</p>}
         </>
       )}
 
@@ -123,7 +123,7 @@ export function PixPayment({
           <button onClick={onCard} disabled={busy !== null} className="btn-outline">
             {busy === 'card' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />} Pagar com cartão
           </button>
-          <p className="mt-2 text-[11px] text-mute">Você será levado à página segura do PurinCash. Se já pagou o Pix, não pague de novo.</p>
+          <p className="mt-2 text-[11px] text-mute">Você será levado à página segura de pagamento. Se já pagou o Pix, não pague de novo.</p>
         </div>
       )}
     </div>

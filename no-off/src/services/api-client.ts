@@ -47,7 +47,7 @@ export async function api<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 // ------------------------------------------------------------------ checkout
 
-/** Meios disponíveis (cartão não existe no sandbox do PurinCash). */
+/** Meios disponíveis (a MisticPay só tem Pix; card_available fica false). */
 export interface PaymentOptions {
   environment: 'live' | 'sandbox';
   card_available: boolean;
@@ -72,7 +72,7 @@ export interface PayResponse extends PaymentOptions {
   reused: boolean;
   order_status: OrderStatus;
   pix: PixInfo | null;
-  /** Cartão: página de pagamento hospedada do PurinCash. */
+  /** Cartão: não disponível na MisticPay (sempre null). */
   checkout_url: string | null;
   expires_at: string | null;
 }

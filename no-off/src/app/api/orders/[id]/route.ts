@@ -1,4 +1,4 @@
-/** Status do pedido do comprador (com reconciliação na API do PurinCash) e desistência da reserva. */
+/** Status do pedido do comprador (com reconciliação na API da MisticPay) e desistência da reserva. */
 import { createOrderHandlers } from '@/lib/server/tickets/handlers';
 
 export const runtime = 'nodejs';

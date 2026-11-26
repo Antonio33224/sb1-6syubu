@@ -114,7 +114,7 @@ export function TicketSelector({ event }: { event: EventWithVenue }) {
           <p className="mt-2 text-[12px] text-mute">{count ? `${count} ${count === 1 ? 'ingresso' : 'ingressos'}` : 'Selecione ao menos um ingresso'} · máx. {MAX_PER_ORDER} por pedido</p>
           <button onClick={proceed} disabled={!count} className="btn-primary mt-6 w-full"><Ticket className="h-4 w-4" /> Continuar</button>
           <ul className="mt-6 flex flex-col gap-2 text-[11px] text-mute">
-            <li className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-bright" /> Pagamento seguro pelo PurinCash: Pix ou cartão de crédito.</li>
+            <li className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-bright" /> Pagamento seguro por Pix, processado pela MisticPay.</li>
             <li className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-bright" /> Seus ingressos ficam reservados por 10 minutos durante o pagamento.</li>
             <li className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-bright" /> QR Code único, enviado por e-mail e em Meus ingressos.</li>
           </ul>

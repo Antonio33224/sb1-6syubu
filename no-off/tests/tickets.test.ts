@@ -1,32 +1,35 @@
 /**
- * Venda de ingressos com PurinCash: assinatura do webhook no corpo cru,
- * deduplicação por X-Webhook-Id, confirmação por GET, conferência de valor,
- * reutilização de cobrança, retry em 429, reserva, cron, campos ocultos e utilitários.
+ * Venda de ingressos com MisticPay (Pix): token do webhook, deduplicação,
+ * reconfirmação por /transactions/check, valores em reais × centavos,
+ * reutilização do Pix, retry em 429, reserva, cron, campos ocultos e utilitários.
  * Sem rede: fetch, sleep e Supabase são falsos.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
 import { formatCpf, isValidCpf, toE164 } from '../src/lib/cpf';
 import {
   backoffMs,
-  cardAmountCents,
+  basicAuth,
+  checkTransaction,
   createPixCharge,
   credentialError,
-  getCharge,
-  metadataOrderId,
-  purinConfig,
-  PurinError,
-  simulatePaid,
-  verifyWebhookSignature,
-  type PurinConfig,
-} from '../src/lib/server/purincash';
+  mapState,
+  misticConfig,
+  MisticError,
+  normalizeAmountCents,
+  orderIdFromTransactionId,
+  ourTransactionId,
+  qrImageSrc,
+  verifyWebhookToken,
+  type MisticConfig,
+} from '../src/lib/server/misticpay';
 import {
   createExpireOrdersHandler,
   createOrderHandlers,
   createPayHandler,
   createReserveHandler,
   createWebhookHandler,
+  webhookUrl,
   type TicketDeps,
 } from '../src/lib/server/tickets/handlers';
 import { redact } from '../src/lib/server/log-sanitize';
@@ -38,13 +41,12 @@ import type { EventReport } from '../src/types/tickets';
 import { fakeSupabase } from './helpers/fake-supabase';
 
 const ENV = { url: 'https://x.supabase.co', anonKey: 'anon', serviceRoleKey: 'svc', siteUrl: 'https://nooff.test' };
-const SECRET = 'segredo-webhook-purincash';
-const SANDBOX: PurinConfig = { apiKey: 'ps_test_abc123', webhookSecret: SECRET, environment: 'sandbox' };
-const LIVE: PurinConfig = { apiKey: 'ps_live_abc123', webhookSecret: SECRET, environment: 'live' };
+const TOKEN = 'token-secreto-do-webhook-0123456789';
+const MISTIC: MisticConfig = { clientId: 'pk_test1234abcd', clientSecret: 'sk_test1234abcd', webhookToken: TOKEN, environment: 'live' };
 const ORDER = '33333333-3333-4333-8333-333333333333';
 const EVENT = '44444444-4444-4444-8444-444444444444';
 const BATCH = '55555555-5555-4555-8555-555555555555';
-const META = JSON.stringify({ orderId: ORDER });
+const TX = '31484480';
 
 type Row = Record<string, unknown>;
 
@@ -62,44 +64,57 @@ test('CPF: dígitos verificadores, sequências repetidas e máscara', () => {
   assert.equal(toE164('9999'), null);
 });
 
-const sign = (raw: string, secret = SECRET) => createHmac('sha256', secret).update(raw).digest('hex');
-
-test('assinatura: HMAC-SHA256 hex do corpo cru — válida, inválida, corpo alterado, ausente', () => {
-  const raw = JSON.stringify({ event: 'charge.paid', paymentId: 'psc_1', amountCents: 15000 });
-  assert.equal(verifyWebhookSignature(raw, sign(raw), SECRET), true);
-  assert.equal(verifyWebhookSignature(Buffer.from(raw), sign(raw).toUpperCase(), SECRET), true, 'hex maiúsculo / Buffer');
-  assert.equal(verifyWebhookSignature(raw, sign(raw, 'outro-segredo'), SECRET), false, 'outro segredo');
-  assert.equal(verifyWebhookSignature(raw.replace('15000', '1'), sign(raw), SECRET), false, 'corpo alterado');
-  assert.equal(verifyWebhookSignature(raw + ' ', sign(raw), SECRET), false, 'um byte a mais');
-  assert.equal(verifyWebhookSignature(raw, null, SECRET), false);
-  assert.equal(verifyWebhookSignature(raw, 'abc', SECRET), false, 'tamanho errado não chega ao timingSafeEqual');
-  assert.equal(verifyWebhookSignature(raw, 'z'.repeat(64), SECRET), false);
+test('config: exige pk_/sk_, token longo; chaves nunca aparecem em mensagens nem logs', () => {
+  assert.equal(misticConfig({}), null);
+  assert.equal(misticConfig({ MISTICPAY_CLIENT_ID: 'pk_x' }), null, 'precisa do secret');
+  const c = misticConfig({ MISTICPAY_CLIENT_ID: ' pk_abc123456 ', MISTICPAY_CLIENT_SECRET: 'sk_abc123456', MISTICPAY_WEBHOOK_TOKEN: TOKEN })!;
+  assert.equal(c.clientId, 'pk_abc123456');
+  assert.equal(c.environment, 'live');
+  assert.equal(credentialError(MISTIC), null);
+  assert.match(credentialError({ ...MISTIC, clientId: 'abc' })!, /pk_/);
+  assert.match(credentialError({ ...MISTIC, clientSecret: 'pk_trocado123' })!, /sk_/);
+  assert.match(credentialError({ ...MISTIC, webhookToken: 'curto' })!, /curto/);
+  assert.equal(credentialError({ ...MISTIC, webhookToken: null }), null, 'sem token: funciona só por consulta');
+  assert.ok(!credentialError({ ...MISTIC, clientId: 'xx_segredo' })!.includes('segredo'));
+  assert.equal(redact('chave pk_live9876543210 e sk_abcdef12345'), 'chave [chave] e [chave]');
+  assert.equal(redact(`POST /api/webhooks/misticpay?token=${TOKEN}&x=1`), 'POST /api/webhooks/misticpay?token=[redigido]&x=1');
+  assert.equal(redact(`Authorization: ${basicAuth(MISTIC)}`), 'Authorization: Basic [redigido]');
 });
 
-test('config: ambiente pelo prefixo da chave; produção recusa ps_test_; chave nunca aparece nos logs', () => {
-  assert.equal(purinConfig({ PURINCASH_API_KEY: 'ps_test_x' })!.environment, 'sandbox');
-  assert.equal(purinConfig({ PURINCASH_API_KEY: 'ps_live_x', PURINCASH_WEBHOOK_SECRET: 's' })!.environment, 'live');
-  assert.equal(purinConfig({}), null);
-  assert.equal(credentialError(SANDBOX, false), null);
-  assert.match(credentialError(SANDBOX, true)!, /ps_test_/);
-  assert.equal(credentialError(LIVE, true), null);
-  assert.match(credentialError({ ...LIVE, apiKey: 'chave-qualquer' }, false)!, /formato/);
-  assert.ok(!credentialError(SANDBOX, true)!.includes(SANDBOX.apiKey));
-  assert.equal(redact('Authorization falhou para ps_live_AbCdEf123456'), 'Authorization falhou para [chave]');
+test('valores: reais e centavos aceitos; divergência detectada', () => {
+  assert.deepEqual(normalizeAmountCents(15000, 15000), { cents: 15000, matched: true }, 'centavos');
+  assert.deepEqual(normalizeAmountCents(150, 15000), { cents: 15000, matched: true }, 'reais inteiros');
+  assert.deepEqual(normalizeAmountCents(150.0, 15000), { cents: 15000, matched: true });
+  assert.deepEqual(normalizeAmountCents(4.55, 455), { cents: 455, matched: true }, 'reais com centavos');
+  assert.deepEqual(normalizeAmountCents(455, 455), { cents: 455, matched: true });
+  assert.equal(normalizeAmountCents(1, 15000).matched, false);
+  assert.equal(normalizeAmountCents(100, 15000).matched, false);
+  assert.equal(normalizeAmountCents(null, 15000).cents, null);
 });
 
-test('utilitários: metadata string JSON, amount em reais, backoff respeita RateLimit-Reset', () => {
-  assert.equal(metadataOrderId(META), ORDER);
-  assert.equal(metadataOrderId('{"orderId":"x"}'), null);
-  assert.equal(metadataOrderId('não é json'), null);
-  assert.equal(metadataOrderId(null), null);
-  assert.equal(cardAmountCents({ amount: 49.9 }), 4990);
-  assert.equal(cardAmountCents({ amount: '150.00' }), 15000);
-  assert.equal(cardAmountCents({ amountCents: 4990, amount: 1 }), 4990);
-  assert.equal(cardAmountCents({}), null);
-  assert.ok(backoffMs(0, '2', () => 0) >= 2000);
-  assert.ok(backoffMs(0, '999', () => 0) <= 10_000, 'limitado');
-  assert.ok(backoffMs(3, null, () => 1) <= 5_000);
+test('utilitários: estados, ids, QR, token e backoff', () => {
+  assert.equal(mapState('COMPLETO'), 'paid');
+  assert.equal(mapState('pendente'), 'pending');
+  assert.equal(mapState('FALHA'), 'failed');
+  assert.equal(mapState('CANCELADO'), 'cancelled');
+  assert.equal(mapState('DEVOLVIDO'), 'refunded');
+  assert.equal(mapState('DEVOLVIDO_PARCIAL'), 'partially_refunded');
+  assert.equal(mapState('???'), 'unknown');
+  const id = ourTransactionId(ORDER, 1_700_000_000_000);
+  assert.match(id, /^nooff-33333333-3333-4333-8333-333333333333-[0-9a-z]+$/);
+  assert.equal(orderIdFromTransactionId(id), ORDER);
+  assert.equal(orderIdFromTransactionId(TX), null);
+  assert.equal(qrImageSrc({ qrCodeBase64: 'iVBORw0', qrcodeUrl: null }), 'data:image/png;base64,iVBORw0');
+  assert.equal(qrImageSrc({ qrCodeBase64: null, qrcodeUrl: 'https://qr.test/x.png' }), 'https://qr.test/x.png');
+  assert.equal(verifyWebhookToken(TOKEN, TOKEN), true);
+  assert.equal(verifyWebhookToken(TOKEN + 'x', TOKEN), false);
+  assert.equal(verifyWebhookToken('', TOKEN), false);
+  assert.equal(verifyWebhookToken(TOKEN, null), false);
+  assert.equal(webhookUrl('https://www.no-off.site/', TOKEN), `https://www.no-off.site/api/webhooks/misticpay?token=${TOKEN}`);
+  assert.equal(webhookUrl('http://localhost:3000', TOKEN), undefined);
+  assert.equal(webhookUrl('https://x.test', null), undefined);
+  assert.ok(backoffMs(0, '1', () => 0) >= 1000, 'Retry-After');
+  assert.ok(backoffMs(0, '999', () => 0) <= 10_250);
 });
 
 // ------------------------------------------------------------------ cliente HTTP
@@ -114,45 +129,54 @@ function scriptedFetch(responses: { status: number; body: unknown; headers?: Rec
   return { f, calls };
 }
 
-test('cliente: 429 é repetido com backoff (RateLimit-Reset) e a chave vai só no Authorization', async () => {
+test('cliente: Basic auth, 429 com Retry-After e 5xx são repetidos', async () => {
   const { f, calls } = scriptedFetch([
-    { status: 429, body: { error: 'Too many requests' }, headers: { 'RateLimit-Reset': '1' } },
-    { status: 502, body: { error: 'bad gateway' } },
-    { status: 200, body: { paymentId: 'psc_1', status: 'pending', amountCents: 100 } },
+    { status: 429, body: { code: 'RATE_LIMITED', message: 'slow' }, headers: { 'Retry-After': '1' } },
+    { status: 502, body: { code: 'INTERNAL_ERROR' } },
+    { status: 200, body: { transaction: { transactionId: TX, value: 150, fee: 2, transactionState: 'COMPLETO', transactionType: 'DEPOSITO' } } },
   ]);
   const sleeps: number[] = [];
-  const c = await getCharge(SANDBOX, 'psc_1', { fetch: f, sleep: async (ms) => void sleeps.push(ms) });
-  assert.equal(c.paymentId, 'psc_1');
+  const t = await checkTransaction(MISTIC, TX, { fetch: f, sleep: async (ms) => void sleeps.push(ms) });
+  assert.equal(t.state, 'COMPLETO');
+  assert.equal(t.rawAmount, 150);
   assert.equal(calls.length, 3);
-  assert.ok(sleeps[0]! >= 1000, 'esperou o RateLimit-Reset');
-  assert.equal(calls[0]!.url, 'https://api.purin.cash/v1/charges/psc_1');
-  assert.equal((calls[0]!.init!.headers as Record<string, string>).authorization, 'Bearer ps_test_abc123');
+  assert.ok(sleeps[0]! >= 1000);
+  assert.equal(calls[0]!.url, 'https://api.misticpay.com/api/transactions/check');
+  const h = calls[0]!.init!.headers as Record<string, string>;
+  assert.equal(h.authorization, `Basic ${Buffer.from('pk_test1234abcd:sk_test1234abcd').toString('base64')}`);
+  assert.deepEqual(JSON.parse(String(calls[0]!.init!.body)), { transactionId: TX });
 });
 
-test('cliente: 400/401/404 não são repetidos; 429 esgota as tentativas', async () => {
+test('cliente: 400/401/403/404 não são repetidos; 429 esgota as tentativas', async () => {
   for (const status of [400, 401, 403, 404]) {
-    const { f, calls } = scriptedFetch([{ status, body: { error: 'nope' } }]);
-    await assert.rejects(getCharge(SANDBOX, 'psc_1', { fetch: f, sleep: async () => {} }), (e: unknown) => e instanceof PurinError && e.status === status);
+    const { f, calls } = scriptedFetch([{ status, body: { code: 'X', message: 'nope' } }]);
+    await assert.rejects(checkTransaction(MISTIC, TX, { fetch: f, sleep: async () => {} }), (e: unknown) => e instanceof MisticError && e.status === status);
     assert.equal(calls.length, 1, `status ${status} sem retry`);
   }
-  const { f, calls } = scriptedFetch([{ status: 429, body: { error: 'slow down' } }]);
-  await assert.rejects(getCharge(SANDBOX, 'psc_1', { fetch: f, sleep: async () => {}, retries: 2 }), (e: unknown) => e instanceof PurinError && e.retryable);
+  const { f, calls } = scriptedFetch([{ status: 429, body: { code: 'RATE_LIMITED' } }]);
+  await assert.rejects(checkTransaction(MISTIC, TX, { fetch: f, sleep: async () => {}, retries: 2 }), (e: unknown) => e instanceof MisticError && e.retryable);
   assert.equal(calls.length, 3);
 });
 
-test('cliente: Pix valida valor mínimo e limita expiresIn; simulate-paid só no sandbox', async () => {
-  const { f, calls } = scriptedFetch([{ status: 201, body: { paymentId: 'psc_9', status: 'pending', amountCents: 80 } }]);
-  assert.throws(() => createPixCharge(SANDBOX, { valueCents: 79, description: 'x', expiresIn: 600, customer: { name: 'A', email: 'a@b.co' }, metadata: '{}' }));
-  await createPixCharge(SANDBOX, { valueCents: 80, description: 'x'.repeat(300), expiresIn: 5, customer: { name: 'A', email: 'a@b.co' }, metadata: '{}' }, { fetch: f });
+test('cliente: criação envia REAIS, CPF só dígitos e lê a resposta em "data"', async () => {
+  const { f, calls } = scriptedFetch([{ status: 201, body: { message: 'ok', data: { transactionId: TX, transactionAmount: 455, transactionState: 'PENDENTE', qrCodeBase64: 'iVBOR', qrcodeUrl: 'https://qr/x', copyPaste: '000201...' } } }]);
+  await assert.rejects(createPixCharge(MISTIC, { valueCents: 99, payerName: 'A B', payerDocument: '52998224725', description: 'x', transactionId: 't' }), /mínimo/);
+  await assert.rejects(createPixCharge(MISTIC, { valueCents: 455, payerName: 'A B', payerDocument: '123', description: 'x', transactionId: 't' }), /CPF/);
+  const c = await createPixCharge(MISTIC, { valueCents: 455, payerName: 'Ana Souza', payerDocument: '529.982.247-25', description: 'd'.repeat(300), transactionId: 'nooff-x', projectWebhook: 'https://h' }, { fetch: f });
   const sent = JSON.parse(String(calls[0]!.init!.body));
-  assert.equal(sent.expiresIn, 60);
-  assert.equal(sent.description.length, 200);
-  assert.throws(() => simulatePaid(LIVE, 'psc_9'), /sandbox/);
+  assert.equal(calls[0]!.url, 'https://api.misticpay.com/api/transactions/create');
+  assert.equal(sent.amount, 4.55);
+  assert.equal(sent.payerDocument, '52998224725');
+  assert.equal(sent.description.length, 140);
+  assert.equal(sent.projectWebhook, 'https://h');
+  assert.equal(c.transactionId, TX, 'usa o id devolvido pela MisticPay');
+  assert.equal(c.copyPaste, '000201...');
+  assert.equal(c.rawAmount, 455);
 });
 
 // ------------------------------------------------------------------ handlers
 
-/** apply_payment falso que imita as regras da 0007 (valor em centavos, idempotência, cobrança atual). */
+/** apply_payment falso que imita as regras da 0008 (valor em centavos, idempotência, cobrança atual). */
 function fakeApply(tables: Record<string, Row[]>) {
   return (a: Record<string, unknown>) => {
     const p = a.p_payment as Row;
@@ -160,10 +184,10 @@ function fakeApply(tables: Record<string, Row[]>) {
     if (!order) return { data: { result: 'order_not_found' }, error: null };
     const status = p.status === 'paid' ? 'approved' : p.status === 'failed' ? 'rejected' : String(p.status);
     const payments = (tables.payments ??= []);
-    let pay = payments.find((x) => x.provider === 'purincash' && x.provider_payment_id === p.id);
-    if (!pay) payments.push((pay = { order_id: order.id, provider: 'purincash', provider_payment_id: p.id, created_at: new Date().toISOString() }));
+    let pay = payments.find((x) => x.provider === 'misticpay' && x.provider_payment_id === p.id);
+    if (!pay) payments.push((pay = { order_id: order.id, provider: 'misticpay', provider_payment_id: p.id, created_at: new Date().toISOString() }));
     Object.assign(pay, { status, payment_method: p.method, amount_cents: p.amount_cents });
-    for (const k of ['pix_brcode', 'pix_qr_image', 'checkout_url', 'provider_expires_at'] as const) if (p[k]) pay[k] = p[k];
+    for (const k of ['pix_brcode', 'pix_qr_image', 'provider_expires_at'] as const) if (p[k]) pay[k] = p[k];
     const mine = !order.provider_payment_id || order.provider_payment_id === p.id;
     if (status === 'approved') {
       if (order.status === 'paid') return { data: { result: 'already_paid' }, error: null };
@@ -171,22 +195,22 @@ function fakeApply(tables: Record<string, Row[]>) {
         pay.status = 'amount_mismatch';
         return { data: { result: 'amount_mismatch' }, error: null };
       }
-      Object.assign(order, { status: 'paid', provider_payment_id: p.id });
+      Object.assign(order, { status: 'paid', provider: 'misticpay', provider_payment_id: p.id });
       (tables.tickets ??= []).push({ id: 't1', order_id: order.id });
       return { data: { result: 'issued', tickets: 1 }, error: null };
     }
     if (status === 'pending') {
-      if (p.register || !order.provider_payment_id) order.provider_payment_id = p.id;
+      if (p.register || !order.provider_payment_id) Object.assign(order, { provider: 'misticpay', provider_payment_id: p.id });
       return { data: { result: 'pending' }, error: null };
     }
     if (status === 'refunded' && mine) order.status = 'refunded';
-    return { data: { result: status === 'refunded' ? 'refunded' : 'cancelled' }, error: null };
+    return { data: { result: status === 'refunded' ? 'refunded' : status === 'rejected' ? 'rejected' : 'cancelled' }, error: null };
   };
 }
 
-type Route = (url: string, init?: RequestInit) => { status?: number; body: unknown } | undefined;
+type Route = (url: string, body: Row | null) => { status?: number; body: unknown } | undefined;
 
-function deps(opts: { tables?: Record<string, Row[]>; routes?: Route; userId?: string | null; purin?: PurinConfig | null; production?: boolean; mail?: boolean } = {}) {
+function deps(opts: { tables?: Record<string, Row[]>; routes?: Route; userId?: string | null; mistic?: MisticConfig | null; mail?: boolean } = {}) {
   const tables = opts.tables ?? {};
   const audits: Record<string, unknown>[] = [];
   const rpcs = {
@@ -196,50 +220,49 @@ function deps(opts: { tables?: Record<string, Row[]>; routes?: Route; userId?: s
   };
   const user = fakeSupabase(tables, rpcs);
   const svc = fakeSupabase(tables, rpcs);
-  const fetchCalls: { url: string; method: string; body: Row | null }[] = [];
+  const fetchCalls: { url: string; body: Row | null }[] = [];
   const deferred: Promise<unknown>[] = [];
   const sent: MailMessage[] = [];
+  const sleeps: number[] = [];
   const d: TicketDeps = {
     env: () => ENV,
-    purin: () => (opts.purin === undefined ? SANDBOX : opts.purin),
-    production: () => opts.production ?? false,
+    mistic: () => (opts.mistic === undefined ? MISTIC : opts.mistic),
     authenticate: async () => (opts.userId === null ? null : { db: user.db, userId: opts.userId ?? 'buyer-1' }),
     service: () => svc.db,
     mailer: () => (opts.mail ? { send: async (m: MailMessage) => void sent.push(m) } : null),
-    sleep: async () => {},
+    sleep: async (ms) => void sleeps.push(ms),
     defer: (task) => void deferred.push(task()),
     cronSecret: () => 'cron-secret',
     fetch: (async (url: string, init?: RequestInit) => {
-      const method = init?.method ?? 'GET';
-      fetchCalls.push({ url: String(url), method, body: init?.body ? JSON.parse(String(init.body)) : null });
-      const r = opts.routes?.(String(url), init) ?? { status: 404, body: { error: 'Not found' } };
+      const body = init?.body ? (JSON.parse(String(init.body)) as Row) : null;
+      fetchCalls.push({ url: String(url), body });
+      const r = opts.routes?.(String(url), body) ?? { status: 404, body: { code: 'TRANSACTION_NOT_FOUND' } };
       return new Response(JSON.stringify(r.body), { status: r.status ?? 200, headers: { 'content-type': 'application/json' } });
     }) as typeof fetch,
   };
-  return { d, tables, user, svc, fetchCalls, audits, deferred, sent, flush: () => Promise.all(deferred) };
+  return { d, tables, user, svc, fetchCalls, audits, deferred, sent, sleeps, flush: () => Promise.all(deferred) };
 }
 
-const webhookReq = (body: unknown, o: { id?: string | null; sig?: string | null } = {}) => {
-  const raw = typeof body === 'string' ? body : JSON.stringify(body);
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
-  if (o.sig !== null) headers['x-webhook-signature'] = o.sig ?? sign(raw);
-  if (o.id !== null) headers['x-webhook-id'] = o.id ?? `${(body as Row).event}:${(body as Row).paymentId ?? (body as Row).orderCode}`;
-  return new Request('https://nooff.test/api/webhooks/purincash', { method: 'POST', headers, body: raw });
-};
+/** Resposta do /transactions/check. */
+const checkBody = (over: Row = {}) => ({ transaction: { transactionId: TX, value: 15000, fee: 23, transactionState: 'COMPLETO', transactionType: 'DEPOSITO', ...over } });
+const checkRoute = (over: Row = {}): Route => (url) => (url.endsWith('/transactions/check') ? { body: checkBody(over) } : undefined);
+
+const hookReq = (body: unknown, token: string | null = TOKEN) =>
+  new Request(`https://nooff.test/api/webhooks/misticpay${token === null ? '' : `?token=${encodeURIComponent(token)}`}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
+const deposit = (over: Row = {}) => ({ transactionId: Number(TX), transactionType: 'DEPOSITO', transactionMethod: 'PIX', clientName: 'Ana', status: 'COMPLETO', value: 15000, fee: 23, e2e: 'E123', ...over });
 
 const pendingOrder = (over: Row = {}): Row => ({
   id: ORDER, user_id: 'buyer-1', event_id: EVENT, status: 'pending', total: 150, buyer_name: 'Ana Souza', buyer_cpf: '52998224725',
   buyer_email: 'ana@exemplo.com', expires_at: new Date(Date.now() + 8 * 60_000).toISOString(), provider_payment_id: null, ...over,
 });
-const chargeGet = (over: Row = {}) => ({ paymentId: 'psc_777', status: 'paid', amountCents: 15000, metadata: META, paidAt: '2030-01-01T00:00:00Z', ...over });
+const pendingPay = (over: Row = {}): Row => ({ order_id: ORDER, provider: 'misticpay', provider_payment_id: TX, status: 'pending', payment_method: 'pix', ...over });
 
-test('webhook: assinatura inválida, ausente ou corpo alterado → 401 e nada é consultado/aplicado', async () => {
-  const body = { event: 'charge.paid', paymentId: 'psc_777', amountCents: 15000, metadata: META };
-  for (const req of [
-    webhookReq(body, { sig: '0'.repeat(64) }),
-    webhookReq(body, { sig: null }),
-    webhookReq(JSON.stringify({ ...body, amountCents: 1 }), { sig: sign(JSON.stringify(body)) }),
-  ]) {
+test('webhook: token inválido ou ausente → 401 e nada é consultado/aplicado; sem token configurado → 503', async () => {
+  for (const req of [hookReq(deposit(), 'errado'), hookReq(deposit(), null), hookReq(deposit(), TOKEN.slice(0, -1))]) {
     const { d, svc, fetchCalls } = deps({ tables: { orders: [pendingOrder()] } });
     const res = await createWebhookHandler(d)(req);
     assert.equal(res.status, 401);
@@ -247,67 +270,74 @@ test('webhook: assinatura inválida, ausente ou corpo alterado → 401 e nada é
     assert.equal(svc.rpcCalls.length, 0, 'não aplica pagamento');
     assert.deepEqual(svc.writes(), [], 'nem registra o evento');
   }
+  const a = deps({ mistic: { ...MISTIC, webhookToken: null } });
+  assert.equal((await createWebhookHandler(a.d)(hookReq(deposit()))).status, 503);
 });
 
-test('webhook: confirma por GET (não confia no corpo), emite e deduplica pelo X-Webhook-Id', async () => {
+test('webhook: confirma em /transactions/check (não confia no corpo), emite e deduplica', async () => {
   const { d, tables, svc, fetchCalls, flush } = deps({
-    tables: { orders: [pendingOrder({ provider_payment_id: 'psc_777' })], payments: [{ order_id: ORDER, provider: 'purincash', provider_payment_id: 'psc_777', status: 'pending', payment_method: 'pix' }], purincash_webhook_events: [] },
-    routes: (url) => (url.endsWith('/charges/psc_777') ? { body: chargeGet() } : undefined),
+    tables: { orders: [pendingOrder({ provider: 'misticpay', provider_payment_id: TX })], payments: [pendingPay()], misticpay_webhook_events: [] },
+    routes: checkRoute(),
   });
   const h = createWebhookHandler(d);
-  // O corpo diz um valor/pedido falso — vale a consulta à API.
-  const body = { event: 'charge.paid', paymentId: 'psc_777', amountCents: 1, status: 'paid', metadata: JSON.stringify({ orderId: '99999999-9999-4999-8999-999999999999' }) };
-  const r1 = await h(webhookReq(body, { id: 'charge.paid:psc_777' }));
+  // O corpo diz um valor falso — vale a consulta à API.
+  const r1 = await h(hookReq(deposit({ value: 1 })));
   assert.equal(r1.status, 200);
   assert.equal((await r1.json()).result, 'issued');
-  assert.equal(fetchCalls[0]!.url, 'https://api.purin.cash/v1/charges/psc_777');
+  assert.equal(fetchCalls[0]!.url, 'https://api.misticpay.com/api/transactions/check');
+  assert.deepEqual(fetchCalls[0]!.body, { transactionId: TX });
   const apply = svc.rpcCalls.find(([n]) => n === 'apply_payment')!;
   assert.equal(apply[1].p_order, ORDER);
   assert.equal((apply[1].p_payment as Row).amount_cents, 15000, 'valor da API, não do corpo');
+  assert.equal((apply[1].p_payment as Row).provider, 'misticpay');
   assert.equal(tables.orders![0]!.status, 'paid');
   await flush();
 
-  // Reentrega (mesmo X-Webhook-Id, mesmo corpo) → não processa de novo.
-  const r2 = await h(webhookReq(body, { id: 'charge.paid:psc_777' }));
-  assert.equal(r2.status, 200);
+  // Reentrega (mesma transação e estado) → não processa de novo.
+  const r2 = await h(hookReq(deposit({ value: 1 })));
   assert.equal((await r2.json()).duplicate, true);
   assert.equal(svc.rpcCalls.filter(([n]) => n === 'apply_payment').length, 1, 'idempotente');
   assert.equal(fetchCalls.length, 1, 'sem nova consulta');
-  assert.equal(tables.purincash_webhook_events!.length, 1);
+  assert.equal(tables.misticpay_webhook_events!.length, 1);
 });
 
-test('webhook: "payment.paid" do simulate-paid no sandbox (psc_) é tratado como Pix pago', async () => {
-  const { d, tables, fetchCalls } = deps({
-    tables: { orders: [pendingOrder()], payments: [{ order_id: ORDER, provider: 'purincash', provider_payment_id: 'psc_777', status: 'pending', payment_method: 'pix' }], purincash_webhook_events: [] },
-    routes: (url) => (url.endsWith('/charges/psc_777') ? { body: chargeGet() } : undefined),
-  });
-  const res = await createWebhookHandler(d)(webhookReq({ event: 'payment.paid', paymentId: 'psc_777', amountCents: 15000, status: 'paid', metadata: META, sandbox: true }));
+test('webhook: valor em REAIS (150.00) ou em CENTAVOS (15000) emite; o pedido vem do nosso transactionId se a cobrança não estiver registrada', async () => {
+  for (const value of [150, 150.0, 15000]) {
+    const { d, tables } = deps({ tables: { orders: [pendingOrder()], payments: [pendingPay()], misticpay_webhook_events: [] }, routes: checkRoute({ value }) });
+    const res = await createWebhookHandler(d)(hookReq(deposit()));
+    assert.equal((await res.json()).result, 'issued', `value=${value}`);
+    assert.equal(tables.orders![0]!.status, 'paid');
+  }
+  const ours = ourTransactionId(ORDER);
+  const { d, tables } = deps({ tables: { orders: [pendingOrder()], payments: [], misticpay_webhook_events: [] }, routes: checkRoute({ transactionId: ours }) });
+  const res = await createWebhookHandler(d)(hookReq(deposit({ transactionId: ours })));
   assert.equal((await res.json()).result, 'issued');
-  assert.ok(fetchCalls[0]!.url.endsWith('/charges/psc_777'), 'confirmou em /charges');
   assert.equal(tables.orders![0]!.status, 'paid');
-
-  // payment.paid de outro produto (psa_) não é nosso.
-  const other = deps({ tables: { purincash_webhook_events: [] } });
-  const r2 = await createWebhookHandler(other.d)(webhookReq({ event: 'payment.paid', paymentId: 'psa_abc', status: 'paid' }));
-  assert.equal((await r2.json()).result, 'ignored');
-  assert.equal(other.fetchCalls.length, 0);
 });
 
-test('webhook: amountCents divergente do pedido NÃO emite ingresso e alerta o admin', async () => {
+test('webhook: aviso COMPLETO mas consulta ainda PENDENTE → espera, reconfere e devolve 500 sem marcar como processado', async () => {
+  let state = 'PENDENTE';
+  const { d, tables, sleeps } = deps({
+    tables: { orders: [pendingOrder({ provider_payment_id: TX })], payments: [pendingPay()], misticpay_webhook_events: [] },
+    routes: (url) => (url.endsWith('/transactions/check') ? { body: checkBody({ transactionState: state }) } : undefined),
+  });
+  const h = createWebhookHandler(d);
+  const r1 = await h(hookReq(deposit()));
+  assert.equal(r1.status, 500);
+  assert.ok(sleeps.includes(2000), 'esperou o cache do check');
+  assert.equal(tables.misticpay_webhook_events![0]!.processed_at, undefined);
+  state = 'COMPLETO';
+  const r2 = await h(hookReq(deposit()));
+  assert.equal((await r2.json()).result, 'issued');
+});
+
+test('webhook: valor confirmado diferente do pedido NÃO emite ingresso e alerta o admin', async () => {
   const { d, tables, sent, flush } = deps({
     mail: true,
-    tables: {
-      orders: [pendingOrder()],
-      payments: [{ order_id: ORDER, provider: 'purincash', provider_payment_id: 'psc_777', status: 'pending', payment_method: 'pix' }],
-      purincash_webhook_events: [],
-      admin_settings: [{ id: 1, admin_alert_email: 'admin@nooff.test' }],
-      tickets: [],
-    },
-    routes: (url) => (url.endsWith('/charges/psc_777') ? { body: chargeGet({ amountCents: 100 }) } : undefined),
+    tables: { orders: [pendingOrder()], payments: [pendingPay()], misticpay_webhook_events: [], admin_settings: [{ id: 1, admin_alert_email: 'admin@nooff.test' }], tickets: [] },
+    routes: checkRoute({ value: 100 }),
   });
-  // O corpo até diz o valor certo — a API diz que foi pago R$ 1,00.
-  const res = await createWebhookHandler(d)(webhookReq({ event: 'charge.paid', paymentId: 'psc_777', amountCents: 15000, metadata: META }));
-  assert.equal(res.status, 200);
+  const res = await createWebhookHandler(d)(hookReq(deposit()));
   assert.equal((await res.json()).result, 'amount_mismatch');
   await flush();
   assert.equal(tables.orders![0]!.status, 'pending', 'pedido não foi pago');
@@ -315,157 +345,99 @@ test('webhook: amountCents divergente do pedido NÃO emite ingresso e alerta o a
   assert.equal(tables.payments![0]!.status, 'amount_mismatch');
   assert.equal(sent.length, 1);
   assert.equal(sent[0]!.to, 'admin@nooff.test');
-  assert.match(sent[0]!.text, /R\$ 1\.00/);
+  assert.match(sent[0]!.text, /bruto da API: 100\)/);
 });
 
-test('webhook: card_payment.paid (amount em REAIS) confirma em /card-payments e emite', async () => {
-  const { d, tables, fetchCalls, svc } = deps({
-    purin: LIVE,
-    tables: { orders: [pendingOrder({ provider_payment_id: 'JUE7Y9MPSX' })], payments: [{ order_id: ORDER, provider: 'purincash', provider_payment_id: 'JUE7Y9MPSX', status: 'pending', payment_method: 'card' }], purincash_webhook_events: [] },
-    // A consulta de cartão não traz metadata nem (aqui) amountCents: só amount em reais.
-    routes: (url) => (url.endsWith('/card-payments/JUE7Y9MPSX') ? { body: { orderCode: 'JUE7Y9MPSX', status: 'paid', amount: 150.0, currency: 'BRL', paidAt: '2030-01-01T00:00:00Z' } } : undefined),
-  });
-  const res = await createWebhookHandler(d)(webhookReq({ event: 'card_payment.paid', orderCode: 'JUE7Y9MPSX', amount: 150.0, status: 'paid', paidAt: '2030-01-01T00:00:00Z', customer: { name: 'Ana', email: 'ana@exemplo.com' }, metadata: META }));
-  assert.equal((await res.json()).result, 'issued');
-  assert.equal(fetchCalls[0]!.url, 'https://api.purin.cash/v1/card-payments/JUE7Y9MPSX');
-  const p = svc.rpcCalls.find(([n]) => n === 'apply_payment')![1].p_payment as Row;
-  assert.equal(p.amount_cents, 15000, 'R$ 150,00 → 15000 centavos');
-  assert.equal(p.payment_type, 'credit_card');
-  assert.equal(tables.orders![0]!.status, 'paid');
+test('webhook: DEVOLVIDO cancela os ingressos; reembolso RECUSADO vai ao audit log', async () => {
+  const a = deps({ tables: { orders: [pendingOrder({ status: 'paid', provider_payment_id: TX })], payments: [pendingPay({ status: 'approved' })], misticpay_webhook_events: [] }, routes: checkRoute({ transactionState: 'DEVOLVIDO' }) });
+  const r = await createWebhookHandler(a.d)(hookReq(deposit({ status: 'DEVOLVIDO', refund: { status: 'CONCLUIDO', refundId: 'r1', refundedValue: 150 } })));
+  assert.equal((await r.json()).result, 'refunded');
+  assert.equal(a.tables.orders![0]!.status, 'refunded');
+
+  const b = deps({ tables: { orders: [pendingOrder({ status: 'paid', provider_payment_id: TX })], payments: [pendingPay({ status: 'approved' })], misticpay_webhook_events: [] }, routes: checkRoute() });
+  const r2 = await createWebhookHandler(b.d)(hookReq(deposit({ status: 'COMPLETO', refund: { status: 'RECUSADO', refundId: 'r1' } })));
+  assert.equal((await r2.json()).result, 'already_paid');
+  assert.ok(b.audits.some((x) => x.p_action === 'payment.refund_refused'));
 });
 
-test('webhook: Pix pago depois do estoque acabar → reembolso integral com idempotencyKey = pedido', async () => {
-  const tables: Record<string, Row[]> = { orders: [pendingOrder()], payments: [{ order_id: ORDER, provider: 'purincash', provider_payment_id: 'psc_888', status: 'pending', payment_method: 'pix' }], purincash_webhook_events: [] };
-  const { d, fetchCalls, audits, flush } = deps({
-    tables,
-    routes: (url, init) => {
-      if (url.endsWith('/charges/psc_888')) return { body: chargeGet({ paymentId: 'psc_888' }) };
-      if (url.endsWith('/refunds') && init?.method === 'POST') return { status: 201, body: { id: 'rfd_1', status: 'processing' } };
-      return undefined;
-    },
-  });
-  // apply_payment devolve needs_refund (reserva vencida e estoque esgotado).
+test('webhook: pago depois do estoque acabar → devolução manual (audit crítico + e-mail ao admin)', async () => {
+  const tables: Record<string, Row[]> = { orders: [pendingOrder()], payments: [pendingPay()], misticpay_webhook_events: [], admin_settings: [{ id: 1, admin_alert_email: 'admin@nooff.test' }] };
+  const { d, audits, sent, flush } = deps({ tables, mail: true, routes: checkRoute() });
   const noStock = fakeSupabase(tables, { apply_payment: () => ({ data: { result: 'needs_refund' }, error: null }), server_audit: (a) => (audits.push(a), { data: null, error: null }) });
-  const h = createWebhookHandler({ ...d, service: () => noStock.db });
-  const res = await h(webhookReq({ event: 'charge.paid', paymentId: 'psc_888', metadata: META }));
+  const res = await createWebhookHandler({ ...d, service: () => noStock.db })(hookReq(deposit()));
   assert.equal((await res.json()).result, 'needs_refund');
   await flush();
-  const refund = fetchCalls.find((c) => c.url.endsWith('/refunds'))!;
-  assert.deepEqual({ paymentId: refund.body!.paymentId, idempotencyKey: refund.body!.idempotencyKey }, { paymentId: 'psc_888', idempotencyKey: ORDER });
-  assert.ok(audits.some((a) => a.p_action === 'payment.refund_requested'));
+  const a = audits.find((x) => x.p_action === 'payment.refund_manual_required')!;
+  assert.equal(a.p_severity, 'critical');
+  assert.equal(a.p_target_id, ORDER);
+  assert.match(sent[0]!.subject, /devolver um Pix/);
 });
 
-test('webhook: sem PURINCASH_WEBHOOK_SECRET → 503; eventos desconhecidos são ignorados; refund.failed vai ao audit log', async () => {
-  const a = deps();
-  const noSecret = createWebhookHandler({ ...a.d, purin: () => ({ ...SANDBOX, webhookSecret: null }) });
-  assert.equal((await noSecret(webhookReq({ event: 'charge.paid', paymentId: 'psc_1' }))).status, 503);
-
-  const b = deps({ tables: { purincash_webhook_events: [] } });
-  const r = await createWebhookHandler(b.d)(webhookReq({ event: 'subscription.renewed', paymentId: 'psc_1' }));
+test('webhook: saque e transação desconhecida são ignorados; MED vai ao audit log', async () => {
+  const a = deps({ tables: { misticpay_webhook_events: [] } });
+  const r = await createWebhookHandler(a.d)(hookReq(deposit({ transactionType: 'SAQUE' })));
   assert.equal((await r.json()).result, 'ignored');
-  assert.equal(b.fetchCalls.length, 0);
+  assert.equal(a.fetchCalls.length, 0);
 
-  const c = deps({ tables: { purincash_webhook_events: [], payments: [{ order_id: ORDER, provider: 'purincash', provider_payment_id: 'psc_5' }] } });
-  const rf = await createWebhookHandler(c.d)(webhookReq({ event: 'refund.failed', paymentId: 'psc_5', refundId: 'rfd_9', failureCode: 'not_sent' }));
-  assert.equal((await rf.json()).result, 'refund_failed');
-  assert.equal(c.audits[0]!.p_action, 'payment.refund_failed');
-  assert.equal(c.audits[0]!.p_severity, 'critical');
+  const b = deps({ tables: { misticpay_webhook_events: [], payments: [] }, routes: checkRoute() });
+  const r2 = await createWebhookHandler(b.d)(hookReq(deposit({ transactionId: 999 })));
+  assert.equal((await r2.json()).result, 'order_not_found');
+
+  const c = deps({ tables: { misticpay_webhook_events: [], payments: [pendingPay()] } });
+  const r3 = await createWebhookHandler(c.d)(hookReq({ event: 'INFRACTION', transactionId: Number(TX) }));
+  assert.equal((await r3.json()).result, 'dispute_logged');
+  assert.equal(c.audits[0]!.p_action, 'payment.dispute');
   assert.equal(c.audits[0]!.p_target_id, ORDER);
-});
-
-test('webhook: falha na API → 500 (PurinCash reenvia) e o evento pode ser reprocessado', async () => {
-  let up = false;
-  const { d, tables } = deps({
-    tables: { orders: [pendingOrder()], payments: [{ order_id: ORDER, provider: 'purincash', provider_payment_id: 'psc_777', status: 'pending', payment_method: 'pix' }], purincash_webhook_events: [] },
-    routes: (url) => (url.endsWith('/charges/psc_777') ? (up ? { body: chargeGet() } : { status: 500, body: { error: 'boom' } }) : undefined),
-  });
-  const h = createWebhookHandler(d);
-  const body = { event: 'charge.paid', paymentId: 'psc_777', metadata: META };
-  assert.equal((await h(webhookReq(body))).status, 500);
-  assert.equal(tables.purincash_webhook_events![0]!.processed_at, undefined);
-  up = true;
-  const ok = await h(webhookReq(body));
-  assert.equal((await ok.json()).result, 'issued');
 });
 
 // ------------------------------------------------------------------ pagamento
 
 const payReq = (body: unknown) => new Request('https://nooff.test/api/checkout/pay', { method: 'POST', headers: { authorization: 'Bearer t', 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const createRoute: Route = (url) =>
+  url.endsWith('/transactions/create') ? { status: 201, body: { data: { transactionId: TX, transactionAmount: 15000, transactionState: 'PENDENTE', qrCodeBase64: 'iVBOR', qrcodeUrl: 'https://qr/x', copyPaste: '000201PIX' } } } : undefined;
 
-test('pagamento Pix: valor do BANCO em centavos, prazo = reserva, callbackUrl e metadata com orderId', async () => {
-  const { d, fetchCalls, tables } = deps({
-    tables: { orders: [pendingOrder()], public_events: [{ id: EVENT, name: 'Festa X', name_hidden: false }], payments: [] },
-    routes: (url, init) =>
-      url.endsWith('/charges') && init?.method === 'POST'
-        ? { status: 201, body: { paymentId: 'psc_new', status: 'pending', amountCents: 15000, currency: 'BRL', environment: 'sandbox', pix: { brCode: '000201PIX', qrCodeImage: 'data:image/png;base64,AAA' }, expiresAt: new Date(Date.now() + 8 * 60_000).toISOString() } }
-        : undefined,
-  });
+test('pagamento: valor do BANCO em reais, CPF e nome do pedido, webhook com token; registra o id da MisticPay', async () => {
+  const { d, fetchCalls, tables } = deps({ tables: { orders: [pendingOrder()], public_events: [{ id: EVENT, name: 'Festa X', name_hidden: false }], payments: [] }, routes: createRoute });
   const res = await createPayHandler(d)(payReq({ order_id: ORDER, method: 'pix', total: 0.01 }));
   assert.equal(res.status, 200);
   const body = fetchCalls[0]!.body!;
-  assert.equal(fetchCalls[0]!.url, 'https://api.purin.cash/v1/charges');
-  assert.equal(body.valueCents, 15000, 'ignora qualquer valor do navegador');
-  assert.ok(Number(body.expiresIn) > 400 && Number(body.expiresIn) <= 480, 'mesmo prazo da reserva');
-  assert.equal(body.callbackUrl, 'https://nooff.test/api/webhooks/purincash');
-  assert.equal(body.metadata, META, 'metadata é string JSON');
-  assert.deepEqual(body.customer, { name: 'Ana Souza', email: 'ana@exemplo.com', externalId: 'buyer-1' });
+  assert.equal(body.amount, 150, 'ignora qualquer valor do navegador');
+  assert.equal(body.payerDocument, '52998224725');
+  assert.equal(body.payerName, 'Ana Souza');
+  assert.match(String(body.description), /Festa X/);
+  assert.equal(orderIdFromTransactionId(body.transactionId), ORDER);
+  assert.equal(body.projectWebhook, `https://nooff.test/api/webhooks/misticpay?token=${TOKEN}`);
   const out = await res.json();
   assert.equal(out.pix.br_code, '000201PIX');
-  assert.equal(out.card_available, false, 'sandbox esconde cartão');
+  assert.equal(out.pix.qr_image, 'data:image/png;base64,iVBOR');
+  assert.equal(out.card_available, false);
+  assert.equal(out.environment, 'live');
   assert.equal(out.reused, false);
-  assert.equal(tables.orders![0]!.provider_payment_id, 'psc_new', 'cobrança registrada no pedido');
+  assert.equal(tables.orders![0]!.provider_payment_id, TX, 'id devolvido pela MisticPay');
   assert.equal(tables.payments![0]!.pix_brcode, '000201PIX');
 });
 
-test('pagamento: reutiliza a cobrança pendente do pedido em vez de criar outra', async () => {
+test('pagamento: reutiliza o Pix pendente do pedido; quase vencido gera outro', async () => {
   const exp = new Date(Date.now() + 6 * 60_000).toISOString();
-  const { d, fetchCalls } = deps({
-    tables: {
-      orders: [pendingOrder({ provider_payment_id: 'psc_old' })],
-      payments: [{ order_id: ORDER, provider: 'purincash', provider_payment_id: 'psc_old', status: 'pending', payment_method: 'pix', pix_brcode: 'BRCODE-OLD', pix_qr_image: 'https://qr.test/x.png', provider_expires_at: exp }],
-    },
-  });
-  const res = await createPayHandler(d)(payReq({ order_id: ORDER }));
-  const out = await res.json();
-  assert.equal(res.status, 200);
+  const { d, fetchCalls } = deps({ tables: { orders: [pendingOrder({ provider_payment_id: TX })], payments: [pendingPay({ pix_brcode: 'BR-OLD', pix_qr_image: 'https://qr/old', provider_expires_at: exp })] } });
+  const out = await (await createPayHandler(d)(payReq({ order_id: ORDER }))).json();
   assert.equal(out.reused, true);
-  assert.equal(out.pix.br_code, 'BRCODE-OLD');
+  assert.equal(out.pix.br_code, 'BR-OLD');
   assert.equal(fetchCalls.length, 0, 'nenhuma cobrança nova');
 
-  // Cobrança quase vencida não é reutilizada.
-  const near = deps({
-    tables: { orders: [pendingOrder()], public_events: [], payments: [{ order_id: ORDER, provider: 'purincash', provider_payment_id: 'psc_old', status: 'pending', payment_method: 'pix', pix_brcode: 'X', provider_expires_at: new Date(Date.now() + 10_000).toISOString() }] },
-    routes: () => ({ status: 201, body: { paymentId: 'psc_new', status: 'pending', amountCents: 15000, pix: { brCode: 'NEW', qrCodeImage: '' } } }),
-  });
-  assert.equal((await (await createPayHandler(near.d)(payReq({ order_id: ORDER }))).json()).pix.br_code, 'NEW');
+  const near = deps({ tables: { orders: [pendingOrder()], public_events: [], payments: [pendingPay({ provider_payment_id: '1', pix_brcode: 'X', provider_expires_at: new Date(Date.now() + 10_000).toISOString() })] }, routes: createRoute });
+  assert.equal((await (await createPayHandler(near.d)(payReq({ order_id: ORDER }))).json()).pix.br_code, '000201PIX');
 });
 
-test('pagamento cartão: indisponível no sandbox; em produção devolve checkoutUrl com successUrl → /pedido/[id]', async () => {
-  const sb = deps({ tables: { orders: [pendingOrder()] } });
-  const r1 = await createPayHandler(sb.d)(payReq({ order_id: ORDER, method: 'card' }));
-  assert.equal(r1.status, 400);
-  assert.equal((await r1.json()).code, 'card_unavailable');
-  assert.equal(sb.fetchCalls.length, 0);
+test('pagamento: cartão → 400; pedido de outra pessoa → 404; reserva expirada → 409; sem login → 401; recusa → 402', async () => {
+  const card = deps({ tables: { orders: [pendingOrder()] } });
+  const rc = await createPayHandler(card.d)(payReq({ order_id: ORDER, method: 'card' }));
+  assert.equal(rc.status, 400);
+  assert.equal((await rc.json()).code, 'card_unavailable');
+  assert.equal(card.fetchCalls.length, 0);
 
-  const live = deps({
-    purin: LIVE,
-    tables: { orders: [pendingOrder()], public_events: [], payments: [] },
-    routes: (url) => (url.endsWith('/card-payments') ? { status: 201, body: { orderCode: 'JUE7Y9MPSX', status: 'pending', amountCents: 15000, currency: 'BRL', checkoutUrl: 'https://pay.purin.cash/c/JUE7Y9MPSX', expiresAt: new Date(Date.now() + 30 * 60_000).toISOString() } } : undefined),
-  });
-  const r2 = await createPayHandler(live.d)(payReq({ order_id: ORDER, method: 'card' }));
-  const out = await r2.json();
-  assert.equal(out.checkout_url, 'https://pay.purin.cash/c/JUE7Y9MPSX');
-  assert.equal(out.card_available, true);
-  const sent = live.fetchCalls[0]!.body!;
-  assert.equal(sent.successUrl, `https://nooff.test/pedido/${ORDER}`);
-  assert.equal(sent.valueCents, 15000);
-  assert.equal(live.tables.payments![0]!.payment_method, 'card');
-});
-
-test('pagamento: pedido de outra pessoa → 404; reserva expirada → 409; sem login → 401; erro 4xx do gateway → 402', async () => {
   const other = deps({ tables: { orders: [pendingOrder({ user_id: 'outra-pessoa' })] } });
   assert.equal((await createPayHandler(other.d)(payReq({ order_id: ORDER }))).status, 404);
-  assert.equal(other.fetchCalls.length, 0);
 
   const expired = deps({ tables: { orders: [pendingOrder({ expires_at: new Date(Date.now() - 1000).toISOString() })] } });
   assert.equal((await createPayHandler(expired.d)(payReq({ order_id: ORDER }))).status, 409);
@@ -474,25 +446,23 @@ test('pagamento: pedido de outra pessoa → 404; reserva expirada → 409; sem l
   const anon = deps({ userId: null });
   assert.equal((await createPayHandler(anon.d)(payReq({ order_id: ORDER }))).status, 401);
 
-  const refused = deps({ tables: { orders: [pendingOrder()], public_events: [], payments: [] }, routes: () => ({ status: 400, body: { error: 'valueCents inválido' } }) });
+  const refused = deps({ tables: { orders: [pendingOrder()], public_events: [], payments: [] }, routes: () => ({ status: 400, body: { code: 'VALIDATION_ERROR', message: 'payerDocument inválido' } }) });
   assert.equal((await createPayHandler(refused.d)(payReq({ order_id: ORDER }))).status, 402);
   assert.equal(refused.fetchCalls.length, 1, '400 não é repetido');
+
+  const down = deps({ tables: { orders: [pendingOrder()], public_events: [], payments: [] }, routes: () => ({ status: 500, body: { code: 'INTERNAL_ERROR' } }) });
+  assert.equal((await createPayHandler(down.d)(payReq({ order_id: ORDER }))).status, 502);
 });
 
 // ------------------------------------------------------------------ pedido / reserva / cron
 
-test('GET do pedido: reconcilia por GET na API enquanto pendente e devolve o Pix', async () => {
+test('GET do pedido: reconcilia em /transactions/check enquanto pendente e não expõe o id do provedor', async () => {
   const exp = new Date(Date.now() + 6 * 60_000).toISOString();
   const { d, fetchCalls } = deps({
-    tables: {
-      orders: [pendingOrder({ provider_payment_id: 'psc_777', created_at: '2030-01-01' })],
-      payments: [{ order_id: ORDER, provider: 'purincash', provider_payment_id: 'psc_777', status: 'pending', payment_method: 'pix', pix_brcode: 'BR', pix_qr_image: '', provider_expires_at: exp, checked_at: null }],
-      tickets: [],
-    },
-    routes: (url) => (url.endsWith('/charges/psc_777') ? { body: chargeGet() } : undefined),
+    tables: { orders: [pendingOrder({ provider_payment_id: TX, created_at: '2030-01-01' })], payments: [pendingPay({ pix_brcode: 'BR', provider_expires_at: exp, checked_at: null })], tickets: [] },
+    routes: checkRoute(),
   });
-  const res = await createOrderHandlers(d).GET(new Request(`https://nooff.test/api/orders/${ORDER}`), ORDER);
-  const out = await res.json();
+  const out = await (await createOrderHandlers(d).GET(new Request(`https://nooff.test/api/orders/${ORDER}`), ORDER)).json();
   assert.equal(fetchCalls.length, 1);
   assert.equal(out.order.status, 'paid');
   assert.equal(out.order.provider_payment_id, undefined, 'id do provedor não vai ao navegador');
@@ -520,11 +490,11 @@ test('reserva: valida os dados do comprador antes do banco e repassa a mensagem 
   assert.deepEqual(args.p_buyer, { name: 'Ana Souza', cpf: '52998224725', email: 'ana@exemplo.com', phone: '21999991234' });
 });
 
-test('reserva: devolve os meios disponíveis; erro interno do banco não vaza detalhes', async () => {
+test('reserva: devolve os meios disponíveis (só Pix); erro interno do banco não vaza detalhes', async () => {
   const d0 = deps();
   const ok = fakeSupabase({}, { reserve_order: () => ({ data: { order_id: ORDER, total: 150, expires_at: 'x' }, error: null }) });
   const r1 = await createReserveHandler({ ...d0.d, authenticate: async () => ({ db: ok.db, userId: 'buyer-1' }) })(reserveReq({ event_id: EVENT, items: [{ batch_id: BATCH, quantity: 1 }], buyer }));
-  assert.deepEqual((await r1.json()).payment, { environment: 'sandbox', card_available: false });
+  assert.deepEqual((await r1.json()).payment, { environment: 'live', card_available: false });
 
   const bad = fakeSupabase({}, { reserve_order: () => ({ data: null, error: { message: 'relation "orders" does not exist' } }) });
   const res = await createReserveHandler({ ...d0.d, authenticate: async () => ({ db: bad.db, userId: 'buyer-1' }) })(reserveReq({ event_id: EVENT, items: [{ batch_id: BATCH, quantity: 1 }], buyer }));
@@ -532,30 +502,33 @@ test('reserva: devolve os meios disponíveis; erro interno do banco não vaza de
   assert.equal((await res.json()).error, 'Falha ao acessar o banco.');
 });
 
-test('pagamentos não configurados → 503 e produção com chave ps_test_ é bloqueada', async () => {
-  const a = deps({ purin: null });
-  assert.equal((await createReserveHandler(a.d)(reserveReq({}))).status, 503);
-  const b = deps({ production: true });
+test('pagamentos não configurados → 503; chave em formato errado → 503 sem vazar a chave', async () => {
+  const a = deps({ mistic: null });
+  const r = await createReserveHandler(a.d)(reserveReq({}));
+  assert.equal(r.status, 503);
+  assert.equal((await r.json()).code, 'payments_not_configured');
+  const b = deps({ mistic: { ...MISTIC, clientId: 'chave-colada-errada' } });
   const res = await createReserveHandler(b.d)(reserveReq({}));
   assert.equal(res.status, 503);
-  assert.equal((await res.json()).code, 'payments_misconfigured');
-  const c = deps({ production: true, purin: LIVE, userId: null });
-  assert.equal((await createReserveHandler(c.d)(reserveReq({}))).status, 401, 'chave live em produção passa');
+  const out = await res.json();
+  assert.equal(out.code, 'payments_misconfigured');
+  assert.ok(!JSON.stringify(out).includes('chave-colada-errada'));
+  const c = deps({ userId: null });
+  assert.equal((await createReserveHandler(c.d)(reserveReq({}))).status, 401, 'configuração válida passa');
 });
 
 test('cron: exige CRON_SECRET e confere na API antes de expirar', async () => {
   const past = new Date(Date.now() - 5 * 60_000).toISOString();
   const { d, svc, fetchCalls, tables } = deps({
     tables: {
-      orders: [pendingOrder({ provider: 'purincash', provider_payment_id: 'psc_777', expires_at: past }), pendingOrder({ id: '66666666-6666-4666-8666-666666666666', expires_at: past })],
-      payments: [{ order_id: ORDER, provider: 'purincash', provider_payment_id: 'psc_777', status: 'pending', payment_method: 'pix', checked_at: new Date().toISOString() }],
+      orders: [pendingOrder({ provider: 'misticpay', provider_payment_id: TX, expires_at: past }), pendingOrder({ id: '66666666-6666-4666-8666-666666666666', expires_at: past })],
+      payments: [pendingPay({ checked_at: new Date().toISOString() })],
     },
-    routes: (url) => (url.endsWith('/charges/psc_777') ? { body: chargeGet() } : undefined),
+    routes: checkRoute(),
   });
   const h = createExpireOrdersHandler(d);
   assert.equal((await h(new Request('https://nooff.test/api/cron/expire-orders'))).status, 401);
-  const ok = await h(new Request('https://nooff.test/api/cron/expire-orders', { headers: { authorization: 'Bearer cron-secret' } }));
-  const out = await ok.json();
+  const out = await (await h(new Request('https://nooff.test/api/cron/expire-orders', { headers: { authorization: 'Bearer cron-secret' } }))).json();
   assert.equal(out.expired, 2);
   assert.equal(out.checked, 1);
   assert.equal(fetchCalls.length, 1, 'consultou a API mesmo com checagem recente (force)');

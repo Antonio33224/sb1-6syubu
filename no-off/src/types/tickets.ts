@@ -124,8 +124,8 @@ export interface Order {
   installments: number | null;
   /** Pedidos antigos (Mercado Pago). */
   mp_payment_id: string | null;
-  provider: 'mercadopago' | 'purincash' | null;
-  /** Cobrança atual: psc_... (Pix) ou orderCode (cartão) no PurinCash. */
+  provider: 'mercadopago' | 'purincash' | 'misticpay' | null;
+  /** Cobrança atual: transactionId da MisticPay (Pix). Pedidos antigos: PurinCash/Mercado Pago. */
   provider_payment_id: string | null;
   provider_method: 'pix' | 'card' | null;
   paid_at: string | null;

@@ -273,7 +273,7 @@ function Checkout() {
               <span className="font-display text-[26px] font-extrabold text-red-bright">{brlCents(order ? Number(order.total) : subtotal)}</span>
             </div>
             {order && options.environment === 'sandbox' && (
-              <p className="border-t border-line px-6 py-3 text-[11px] text-mute">Ambiente de teste do PurinCash (sandbox): nenhuma cobrança real é feita e o cartão fica indisponível.</p>
+              <p className="border-t border-line px-6 py-3 text-[11px] text-mute">Ambiente de teste: nenhuma cobrança real é feita.</p>
             )}
           </div>
         </aside>

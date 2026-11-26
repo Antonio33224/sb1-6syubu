@@ -11,7 +11,7 @@ import { ApiError, checkoutApi, type OrderStatusResponse } from '@/services/api-
 import { ticketService, type MyOrder } from '@/services/ticket-service';
 import { ORDER_STATUS_LABEL, PAYMENT_METHOD_LABEL } from '@/types';
 
-/** Intervalo do acompanhamento do status (o servidor também reconcilia com o PurinCash). */
+/** Intervalo do acompanhamento do status (o servidor também reconcilia com a MisticPay). */
 const POLL_MS = 4000;
 
 export default function PedidoPage() {
@@ -44,7 +44,7 @@ function Pedido() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async () => {
       try {
-        const s = await checkoutApi.status(id); // também reconcilia com o PurinCash
+        const s = await checkoutApi.status(id); // também reconcilia com a MisticPay
         const full = await ticketService.getOrder(id);
         if (stop) return;
         setOrder(full);

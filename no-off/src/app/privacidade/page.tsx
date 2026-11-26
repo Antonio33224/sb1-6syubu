@@ -14,8 +14,8 @@ export default function PrivacidadePage() {
       </p>
       <h2>Pagamentos</h2>
       <p>
-        Os pagamentos são processados pelo PurinCash. Para emitir a cobrança compartilhamos seu nome e e-mail. Os dados do cartão são digitados
-        na página segura do próprio PurinCash e nunca passam pelos servidores da NO OFF; recebemos apenas a confirmação, a forma de pagamento e o valor.
+        Os pagamentos são feitos por Pix e processados pela MisticPay. Para emitir a cobrança compartilhamos seu nome e CPF com a MisticPay, como
+        exige o Pix. O pagamento acontece no app do seu banco; recebemos apenas a confirmação e o valor.
       </p>
       <h2>Compartilhamento com o produtor</h2>
       <p>

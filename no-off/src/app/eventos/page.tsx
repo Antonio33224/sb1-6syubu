@@ -46,7 +46,7 @@ export default function EventosPage() {
 
   return (
     <>
-      <PageIntro eyebrow="Agenda" title={<>The night<br />agenda.</>} subtitle="Festas, DJs e eventos — compre seus ingressos com Pix, cartão ou boleto." image="/images/festival-stage.jpg" />
+      <PageIntro eyebrow="Agenda" title={<>The night<br />agenda.</>} subtitle="Festas, DJs e eventos — compre seus ingressos com Pix." image="/images/festival-stage.jpg" />
       <section className="container-site py-10 sm:py-14">
         <div className="flex flex-wrap items-end justify-between gap-6 border-b border-line pb-6">
           <div className="flex flex-wrap items-end gap-4">
